@@ -2,25 +2,28 @@
 django-iranian-payment
 
 پکیج درگاه‌های پرداخت ایرانی برای Django.
-رابط عمومی پکیج اینجا تعریف می‌شود.
+رابط عمومی پکیج اینجا تعریف می‌شود و به هسته‌ی بدون state (core) متصل است.
 """
 
-from .django_integration import get_gateway
-from .exceptions import (
+from .core import (
+    DuplicatePaymentError,
     GatewayConfigurationError,
     GatewayConnectionError,
     GatewayError,
     GatewayPaymentError,
-)
-from .gateways import available_slugs
-from .models import (
+    MissingDependencyError,
+    FeeConfig,
+    FeePayer,
+    FeeResult,
     InitiateResult,
     PaymentRequest,
     PaymentResult,
     PaymentStatus,
+    available_slugs,
 )
+from .core.django_integration import get_gateway
 
-__version__ = "0.1.0"
+__version__ = "0.3.0"
 
 __all__ = [
     "get_gateway",
@@ -29,8 +32,13 @@ __all__ = [
     "PaymentResult",
     "InitiateResult",
     "PaymentStatus",
+    "FeeConfig",
+    "FeePayer",
+    "FeeResult",
     "GatewayError",
     "GatewayConfigurationError",
     "GatewayConnectionError",
     "GatewayPaymentError",
+    "DuplicatePaymentError",
+    "MissingDependencyError",
 ]
