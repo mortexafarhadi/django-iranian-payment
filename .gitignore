@@ -1,0 +1,56 @@
+# ─── Build / packaging artifacts ───
+# این‌ها هنگام `uv build` یا `python -m build` ساخته می‌شوند
+dist/
+build/
+*.egg-info/
+*.egg
+.eggs/
+wheels/
+*.whl
+*.tar.gz
+
+# ─── Python bytecode / cache ───
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# ─── Virtual environments ───
+.venv/
+venv/
+env/
+ENV/
+
+# ─── uv ───
+# برای یک پکیج کتابخانه‌ای، lock را ignore می‌کنیم.
+# اگر می‌خواهی محیط توسعه دقیقاً بازتولید شود، خط زیر را حذف کن.
+uv.lock
+
+# ─── Test / coverage ───
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.cache/
+
+# ─── Secrets / credentials ───
+# هرگز توکن PyPI یا merchant_id واقعی را commit نکن
+.pypirc
+.env
+.env.*
+*.pem
+*.key
+secrets.*
+
+# ─── IDE / editor ───
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# ─── Misc ───
+*.log
