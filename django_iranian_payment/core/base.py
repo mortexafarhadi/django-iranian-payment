@@ -45,6 +45,30 @@ class RequestsTransport(BaseTransport):
                 f"پاسخ درگاه JSON معتبر نبود: {e}", raw={"text": response.text}
             ) from e
 
+    def post_with_headers(
+        self, url, *, json=None, data=None, headers=None, timeout=15
+    ) -> tuple:
+        """
+        مثل post ولی (body_dict, response_headers_dict) برمی‌گرداند.
+        برای درگاه‌هایی که به هدر پاسخ نیاز دارند (مثل سامان neo-pg که آدرس
+        مرحله‌ی بعد را در هدر X-IPG-Url می‌فرستد).
+        """
+        import requests
+
+        try:
+            response = requests.post(
+                url, json=json, data=data, headers=headers, timeout=timeout
+            )
+        except requests.RequestException as e:
+            raise GatewayConnectionError(f"خطای ارتباط با درگاه: {e}") from e
+        resp_headers = dict(response.headers)
+        try:
+            return response.json(), resp_headers
+        except ValueError as e:
+            raise GatewayConnectionError(
+                f"پاسخ درگاه JSON معتبر نبود: {e}", raw={"text": response.text}
+            ) from e
+
 
 class InMemoryTransport(BaseTransport):
     """
@@ -52,8 +76,9 @@ class InMemoryTransport(BaseTransport):
     بدون شبکه، بدون mock. requests_log همه‌ی فراخوانی‌ها را برای assert نگه می‌دارد.
     """
 
-    def __init__(self, responses: dict):
+    def __init__(self, responses: dict, response_headers: dict = None):
         self.responses = responses  # نگاشت url → dict پاسخ
+        self.response_headers = response_headers or {}  # نگاشت url → dict هدر پاسخ
         self.requests_log = []  # لیست (url, json, data, headers)
 
     def post(self, url, *, json=None, data=None, headers=None, timeout=15) -> dict:
@@ -63,6 +88,17 @@ class InMemoryTransport(BaseTransport):
         if url not in self.responses:
             raise GatewayConnectionError(f"پاسخ تستی برای URL تعریف نشده: {url}")
         return self.responses[url]
+
+    def post_with_headers(
+        self, url, *, json=None, data=None, headers=None, timeout=15
+    ) -> tuple:
+        """
+        نسخه‌ی تستی post_with_headers. هدر پاسخ از response_headers خوانده می‌شود
+        (نگاشت url → dict هدر) که در سازنده اختیاری داده می‌شود.
+        """
+        body = self.post(url, json=json, data=data, headers=headers, timeout=timeout)
+        resp_headers = self.response_headers.get(url, {})
+        return body, resp_headers
 
     def soap_call(self, method, params):
         """
