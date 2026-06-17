@@ -142,7 +142,9 @@ def test_sadad_sign_is_deterministic_and_base64():
 
 def test_sadad_invalid_key_length_raises():
     bad_key = base64.b64encode(b"tooshort").decode()  # ۸ بایت، نه ۱۶/۲۴
-    gw = SadadGateway({**CONF, "terminal_key": bad_key}, transport=InMemoryTransport({}))
+    gw = SadadGateway(
+        {**CONF, "terminal_key": bad_key}, transport=InMemoryTransport({})
+    )
     with pytest.raises(GatewayConfigurationError):
         gw._sign("data")
 
@@ -166,4 +168,5 @@ def test_sadad_missing_terminal_key_raises():
 
 def test_sadad_importable_from_experimental():
     from django_iranian_payment.core.experimental.sadad import SadadGateway as S
+
     assert S is SadadGateway

@@ -80,11 +80,11 @@ def test_saman_initiate_neo_pg_reads_ipg_url_header():
     # neo-pg: آدرس مرحله‌ی بعد از هدر X-IPG-Url خوانده می‌شود
     t = InMemoryTransport(
         {_TOKEN_URL: {"status": 1, "token": "TOK"}},
-        response_headers={_TOKEN_URL: {"X-IPG-Url": "https://neo-pg.sep.ir/transaction/init"}},
+        response_headers={
+            _TOKEN_URL: {"X-IPG-Url": "https://neo-pg.sep.ir/transaction/init"}
+        },
     )
-    res = _gw(t).initiate(
-        PaymentRequest(amount=1000, callback_url="cb", order_id="1")
-    )
+    res = _gw(t).initiate(PaymentRequest(amount=1000, callback_url="cb", order_id="1"))
     assert res.raw["ipg_url"] == "https://neo-pg.sep.ir/transaction/init"
     assert "neo-pg.sep.ir" in res.redirect_url
 
@@ -150,7 +150,13 @@ def test_saman_verify_amount_mismatch_is_failed():
 
 def test_saman_verify_failed_when_success_false():
     t = InMemoryTransport(
-        {_VERIFY_URL: {"ResultCode": -2, "ResultDescription": "یافت نشد", "Success": False}}
+        {
+            _VERIFY_URL: {
+                "ResultCode": -2,
+                "ResultDescription": "یافت نشد",
+                "Success": False,
+            }
+        }
     )
     res = _gw(t).verify(
         authority="TOK", amount=1000, order_id="1", extra={"ref_num": "R"}
@@ -200,7 +206,13 @@ def test_saman_reverse_success():
 
 def test_saman_reverse_failed():
     t = InMemoryTransport(
-        {_REVERSE_URL: {"ResultCode": -105, "ResultDescription": "ترمینال یافت نشد", "Success": False}}
+        {
+            _REVERSE_URL: {
+                "ResultCode": -105,
+                "ResultDescription": "ترمینال یافت نشد",
+                "Success": False,
+            }
+        }
     )
     res = _gw(t).reverse(ref_num="REF50")
     assert not res.is_success
@@ -212,4 +224,5 @@ def test_saman_reverse_failed():
 
 def test_saman_importable_from_experimental():
     from django_iranian_payment.core.experimental.saman import SamanGateway as S
+
     assert S is SamanGateway

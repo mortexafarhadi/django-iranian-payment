@@ -54,7 +54,9 @@ class ZibalGateway(BaseGateway):
             raw=result,
         )
 
-    def verify(self, *, authority: str, amount: int, order_id: str, extra: dict = None) -> PaymentResult:
+    def verify(
+        self, *, authority: str, amount: int, order_id: str, extra: dict = None
+    ) -> PaymentResult:
         payload = {
             "merchant": self.config["merchant"],
             "trackId": int(authority),

@@ -96,7 +96,9 @@ def initiate():
     post_to = r.raw.get("post_to")
     token_field = r.raw.get("token_field", "tokenIdentity")
     form_path = _write_redirect_form(r.authority, post_to, token_field)
-    print(f"\n👉 این فایل را در مرورگر باز کن تا به درگاه بروی:\n   file://{form_path}\n")
+    print(
+        f"\n👉 این فایل را در مرورگر باز کن تا به درگاه بروی:\n   file://{form_path}\n"
+    )
     print("پس از پرداخت، token و referenceId را از POSTِ callback بردار و اجرا کن:")
     print(
         f"   uv run python scripts/test_irankish.py verify "

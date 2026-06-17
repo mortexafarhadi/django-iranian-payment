@@ -9,9 +9,13 @@ from django_iranian_payment.core.base import InMemoryTransport
 from django_iranian_payment.core.fee import FeeConfig, FeePayer
 from django_iranian_payment.core.models import PaymentRequest, PaymentStatus
 from django_iranian_payment.core.gateways.zarinpal import ZarinpalGateway
-from django_iranian_payment.core.experimental import IDPayGateway  # معلق: خارج از registry عمومی
+from django_iranian_payment.core.experimental import (
+    IDPayGateway,
+)  # از کار افتاده: خارج از registry عمومی
 from django_iranian_payment.core.gateways.zibal import ZibalGateway
-from django_iranian_payment.core.experimental import PayIrGateway  # معلق: خارج از registry عمومی
+from django_iranian_payment.core.experimental import (
+    PayIrGateway,
+)  # از کار افتاده: خارج از registry عمومی
 
 # ============== زرین‌پال ==============
 
@@ -174,11 +178,11 @@ def test_missing_required_config_raises():
         ZarinpalGateway({}, transport=InMemoryTransport({}))
 
 
-# ============== رگرسیون: pay_ir معلق و خارج از registry ==============
+# ============== رگرسیون: pay_ir از کار افتاده و خارج از registry ==============
 
 
 def test_pay_ir_not_in_public_registry():
-    # pay_ir موقتاً به experimental منتقل شد؛ نباید با get_gateway_class در دسترس باشد
+    # pay_ir از کار افتاده و به experimental منتقل شد؛ نباید با get_gateway_class در دسترس باشد
     from django_iranian_payment.core.gateways import available_slugs, get_gateway_class
     from django_iranian_payment.core.exceptions import GatewayConfigurationError
 
@@ -194,7 +198,7 @@ def test_pay_ir_still_importable_from_experimental():
     assert PayIrGateway.slug == "pay_ir"
 
 
-# ============== رگرسیون: idpay معلق و خارج از registry ==============
+# ============== رگرسیون: idpay از کار افتاده و خارج از registry ==============
 
 
 def test_idpay_not_in_public_registry():
@@ -211,3 +215,23 @@ def test_idpay_still_importable_from_experimental():
     from django_iranian_payment.core.experimental import IDPayGateway
 
     assert IDPayGateway.slug == "idpay"
+
+
+# ============== رگرسیون: ملت تجربی و خارج از registry ==============
+
+
+def test_mellat_not_in_public_registry():
+    # ملت چون هیچ تست sandbox/واقعی ندارد به experimental منتقل شد (قانون طلایی)
+    from django_iranian_payment.core.gateways import available_slugs, get_gateway_class
+    from django_iranian_payment.core.exceptions import GatewayConfigurationError
+
+    assert "mellat" not in available_slugs()
+    with pytest.raises(GatewayConfigurationError):
+        get_gateway_class("mellat")
+
+
+def test_mellat_still_importable_from_experimental():
+    # پیاده‌سازی کامل از مستند رسمی؛ با import صریح در دسترس است
+    from django_iranian_payment.core.experimental.mellat import MellatGateway
+
+    assert MellatGateway.slug == "mellat"

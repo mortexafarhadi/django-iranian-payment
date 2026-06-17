@@ -10,35 +10,85 @@
 
 همه‌ی مبالغ به **ریال** هستند.
 
-## درگاه‌های آماده و تست‌شده
+## درگاه‌های آماده و تست‌شده (registry عمومی)
 
-زرین‌پال، زیبال (REST، تست واقعی موفق) و ملت (SOAP، پیاده‌سازی کامل از مستند رسمی).
+تنها این دو درگاه با تست واقعی sandbox (در `scripts/`) راستی‌آزمایی شده و با
+`get_gateway("slug")` در دسترس‌اند:
+
+| درگاه | نوع | وضعیت |
+|-------|-----|--------|
+| **زرین‌پال** | REST/JSON | sandbox تست‌شده (تراکنش live هنوز تست نشده) |
+| **زیبال** | REST/JSON | sandbox تست‌شده (تراکنش live هنوز تست نشده) |
+
+> ⚠️ هشدار صداقت: «sandbox تست‌شده» یعنی روند با ترمینال آزمایشی کار کرد، نه اینکه
+> با ترمینال/قرارداد واقعی پول جابه‌جا شده باشد. تراکنش واقعی هیچ درگاهی هنوز تست نشده.
+
+## درگاه‌های تجربی (در `core.experimental`)
+
+این درگاه‌ها پیاده‌سازی کامل از مستند رسمی دارند و منطقشان با تست خودکار
+(`InMemoryTransport`) پوشش داده شده، اما **هنوز هیچ تست sandbox یا ترمینال واقعی
+روی آن‌ها انجام نشده** — برخلاف زرین‌پال/زیبال که حداقل sandbox دارند، این درگاه‌ها
+به‌دلیل محدودیت‌های دسترسی (نیاز به قرارداد پذیرندگی، ثبت IP، کلید واقعی) حتی تست
+script سندباکسشان هم انجام نشده است.
+
+طبق قانون طلایی پروژه، تا تست واقعی موفق در registry عمومی قرار نمی‌گیرند و با
+`get_gateway` در دسترس نیستند؛ فقط با import صریح:
+
+```python
+from django_iranian_payment.core.experimental.mellat import MellatGateway
+from django_iranian_payment.core.experimental.saman import SamanGateway
+from django_iranian_payment.core.experimental.irankish import IrankishGateway
+from django_iranian_payment.core.experimental.nextpay import NextPayGateway
+from django_iranian_payment.core.experimental.sadad import SadadGateway
+from django_iranian_payment.core.experimental.digipay import DigipayGateway
+```
+
+| درگاه | نوع | رمزنگاری | وابستگی اختیاری |
+|-------|-----|----------|------------------|
+| **ملت** | SOAP | — | `[soap]` (zeep) |
+| **سامان (SEP)** | REST/JSON | — | — |
+| **ایران‌کیش** | REST/JSON | AES + RSA | `[irankish]` |
+| **نکست‌پی** | REST/JSON | — | — |
+| **سداد** | REST/JSON (WebApi) | 3DES | `[sadad]` |
+| **دیجی‌پی** | REST/JSON (OAuth2) | — | — |
 
 > ⚠️ **ملت** نیاز به `zeep` دارد: `pip install "django-iranian-payment[soap]"`.
 > ملت دومرحله‌ای است؛ حالت پیش‌فرض `verify_settle` (تأیید+واریز اتمیک) توصیه می‌شود.
 > برای واریز با تأخیر، `settle_mode="verify_only"` را در config بگذار و خودت
 > `settle()` را صدا بزن (وگرنه بانک در ۳ ساعت Autoreversal می‌زند).
 
-> ⏸️ **پی‌آی‌آر (Pay.ir) معلق شد.** این درگاه قبلاً کار می‌کرد، اما به‌دلیل خطای
-> دسترسی و بی‌ثباتی شبکهٔ پرداخت پی موقتاً از درگاه‌های عمومی خارج و به
-> `core.experimental` منتقل شده است. `get_gateway("pay_ir")` دیگر کار نمی‌کند.
-> کد سالم است و در صورت نیاز با import صریح در دسترس است:
-> `from django_iranian_payment.core.experimental import PayIrGateway`
->
-> ⏸️ **آیدی‌پی (IDPay) هم معلق شد.** سرویس از کار افتاده گزارش شد (آخرین فعالیت
-> پشتیبانی حوالی ۲۰۲۵-۱۱-۲۰). `get_gateway("idpay")` دیگر کار نمی‌کند. کد سالم و
-> با import صریح در دسترس است:
-> `from django_iranian_payment.core.experimental import IDPayGateway`
+> **ایران‌کیش** و **سداد** به وابستگی رمزنگاری نیاز دارند:
+> `pip install "django-iranian-payment[irankish]"` (شامل `pycryptodome` و `rsa`) یا
+> `pip install "django-iranian-payment[sadad]"` (شامل `pycryptodome`).
 
-درگاه‌های بانکی دیگر (ملت، ملی، سامان، پاسارگاد و ...) در ماژول `core.experimental`
-قرار دارند: تست‌نشده، فقط برای توسعه، و در پروداکشن نباید استفاده شوند.
+> ⚠️ **سداد** همان درگاهی است که از سایت **بانک ملی** به آن هدایت می‌شوید؛
+> بانک ملی درگاه مستقل خود را به سداد سپرده است.
+
+> ⚠️ **دیجی‌پی** برخلاف بقیه احراز هویت دومرحله‌ای OAuth2 دارد: config آن پنج فیلد
+> اجباری می‌خواهد (`username`, `password`, `client_id`, `client_secret`,
+> `provider_id`). در verify به `trackingCode` (که در نتیجه‌ی پرداخت/callback
+> برمی‌گردد) از طریق `extra` نیاز دارد. اگر پرداخت موفق را verify نکنی، پس از
+> مدتی خودکار لغو و وجه مرجوع می‌شود.
+
+### درگاه‌های از کار افتاده (دیگر سرویس نمی‌دهند)
+
+> ❌ **پی‌آی‌آر (Pay.ir)** و **آیدی‌پی (IDPay)** کلاً از دسترس خارج شده‌اند و دیگر
+> سرویس‌دهی نمی‌کنند. کدشان در `core.experimental` به‌عنوان آرشیو باقی مانده ولی
+> برای استفاده توصیه نمی‌شود و `get_gateway("pay_ir")` / `get_gateway("idpay")`
+> کار نمی‌کند. تنها در صورتی که این سرویس‌ها روزی بازگردند، با import صریح در
+> دسترس‌اند:
+> `from django_iranian_payment.core.experimental import PayIrGateway, IDPayGateway`
 
 ## نصب
 
 ```bash
 pip install django-iranian-payment
-# برای درگاه‌های SOAP (ملت، سپه، پارسیان):
+# درگاه‌های SOAP (ملت و سایر درگاه‌های SOAP):
 pip install "django-iranian-payment[soap]"
+# درگاه ایران‌کیش (AES+RSA):
+pip install "django-iranian-payment[irankish]"
+# درگاه سداد (3DES):
+pip install "django-iranian-payment[sadad]"
 ```
 
 ## تنظیمات
@@ -51,15 +101,13 @@ IRANIAN_PAYMENT = {
     "gateways": {
         "zarinpal": {"merchant_id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"},
         "zibal": {"merchant": "zibal"},
-        "mellat": {
-            "terminal_id": "1234",
-            "username": "...",
-            "password": "...",
-            "settle_mode": "verify_settle",  # یا "verify_only"
-        },
     },
 }
 ```
+
+> توجه: درگاه‌های تجربی (ملت، سامان، ...) چون در registry نیستند با این config و
+> `get_gateway` ساخته نمی‌شوند. برای استفاده از آن‌ها باید کلاسشان را مستقیم import
+> و دستی config کنی (پس از تست واقعی).
 
 برای استفاده از لایه‌ی ساده (مدل و ردیابی خودکار)، اپ را هم اضافه کن:
 
@@ -186,6 +234,32 @@ def verify_payment(request):
 > callback برنمی‌گردانند و verify به همان مبلغ ارسالی نیاز دارد. اگر کارمزد روی
 > مشتری اعمال شده باشد، مبلغ ارسالی با مبلغ پایه فرق دارد.
 
+### درگاه‌هایی که در verify به داده‌ی بیشتری نیاز دارند (پارامتر `extra`)
+
+برخی درگاه‌های شاپرکی در verify به داده‌ای فراتر از یک `authority` نیاز دارند که
+در callbackِ POST از بانک برمی‌گردد. این داده‌ها از طریق `extra` پاس داده می‌شوند.
+این درگاه‌ها فعلاً تجربی‌اند و باید کلاسشان را مستقیم import کنی:
+
+```python
+# ملت (تجربی): به sale_reference_id و sale_order_id نیاز دارد
+gw.verify(authority=ref_id, amount=amount, order_id=oid,
+          extra={"sale_reference_id": "...", "sale_order_id": "..."})
+
+# سامان (تجربی): به RefNum نیاز دارد
+gw.verify(authority=token, amount=amount, order_id=oid,
+          extra={"ref_num": "...", "state": "OK"})
+
+# ایران‌کیش (تجربی): به token و reference_id نیاز دارد
+gw.verify(authority=token, amount=amount, order_id=oid,
+          extra={"token": "...", "reference_id": "...", "result_code": "100"})
+
+# دیجی‌پی (تجربی): به trackingCode نیاز دارد (providerId همان order_id است)
+gw.verify(authority=ticket, amount=amount, order_id=oid,
+          extra={"tracking_code": "...", "result": "SUCCESS"})
+```
+
+درگاه‌های ساده (زرین‌پال، زیبال) پارامتر `extra` را نادیده می‌گیرند.
+
 ---
 
 ## کارمزد
@@ -221,15 +295,31 @@ PaymentRequest(amount=100_000, callback_url="...", order_id="1", fee=fee)
 
 ---
 
-## افزودن درگاه جدید
+## افزودن درگاه جدید / عمومی‌کردن یک درگاه تجربی
 
-درگاه‌های `core.experimental` پس از تست با اطلاعات و ترمینال واقعی، با افزودن یک
-خط به `core/gateways/__init__.py` عمومی می‌شوند. تا آن لحظه با `get_gateway` در
-دسترس نیستند و فقط با import صریح قابل دسترسی‌اند:
+درگاه‌های `core.experimental` پس از تست با اطلاعات و ترمینال واقعی، با انتقال فایل
+به `core/gateways/` و افزودن یک خط به `core/gateways/__init__.py` عمومی می‌شوند. تا
+آن لحظه با `get_gateway` در دسترس نیستند و فقط با import صریح قابل دسترسی‌اند:
 
 ```python
-from django_iranian_payment.core.experimental import MellatGateway
+from django_iranian_payment.core.experimental.mellat import MellatGateway
 ```
+
+---
+
+## تاریخچه‌ی تغییرات درگاه‌ها
+
+- **۱۴۰۵/۰۳/۲۷** — درگاه‌های مستقل **بانک تجارت** و **بانک ملی** حذف شدند. این
+  بانک‌ها درگاه مستقل خود را کنار گذاشته‌اند و پرداخت را به PSPهای دیگر سپرده‌اند:
+  - **بانک تجارت → ایران‌کیش**: از درگاه بانک تجارت به ایران‌کیش هدایت
+    می‌شوید. به‌جای درگاه تجارت از `IrankishGateway` استفاده کنید.
+  - **بانک ملی → سداد**: از سایت بانک ملی به درگاه سداد هدایت می‌شوید. به‌جای
+    درگاه ملی از `SadadGateway` استفاده کنید.
+
+  اسکلت‌های `tejarat.py` و `melli.py` (که هرگز پیاده‌سازی واقعی نداشتند و فقط
+  `TODO` بودند) از پروژه حذف شدند تا فایل اضافی نماند. اگر روزی این بانک‌ها
+  درگاه مستقل خود را دوباره راه‌اندازی کنند، در نسخه‌های بعدی دوباره افزوده
+  خواهند شد.
 
 ## لایسنس
 

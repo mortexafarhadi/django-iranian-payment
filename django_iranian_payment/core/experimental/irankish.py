@@ -258,7 +258,9 @@ class IrankishGateway(BaseGateway):
                 status=PaymentStatus.SUCCESS,
                 gateway_slug=self.slug,
                 order_id=order_id,
-                reference_id=str(detail.get("retrievalReferenceNumber") or reference_id),
+                reference_id=str(
+                    detail.get("retrievalReferenceNumber") or reference_id
+                ),
                 amount=amount,
                 card_number=detail.get("maskedPan") or detail.get("pan"),
                 raw=result,

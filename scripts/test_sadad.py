@@ -68,7 +68,9 @@ def initiate():
     print(f"   amount_to_send = {r.amount_to_send:,} ریال")
     print(f"\n👉 این URL را در مرورگر باز کن و پرداخت کن:\n   {r.redirect_url}\n")
     print("پس از بازگشت، Token را از callback POST بردار و اجرا کن (ظرف ۱۵ دقیقه):")
-    print(f"   uv run python scripts/test_sadad.py verify {r.authority} {r.amount_to_send}")
+    print(
+        f"   uv run python scripts/test_sadad.py verify {r.authority} {r.amount_to_send}"
+    )
 
 
 def verify(token, amount):

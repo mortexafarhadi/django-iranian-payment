@@ -87,7 +87,9 @@ class ZarinpalGateway(BaseGateway):
             raw=result,
         )
 
-    def verify(self, *, authority: str, amount: int, order_id: str, extra: dict = None) -> PaymentResult:
+    def verify(
+        self, *, authority: str, amount: int, order_id: str, extra: dict = None
+    ) -> PaymentResult:
         payload = {
             "merchant_id": self.config["merchant_id"],
             "amount": amount,  # همان amount_to_send که در initiate رفت

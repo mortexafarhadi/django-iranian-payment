@@ -44,7 +44,9 @@ from ..models import (
 _TOKEN_URL = "https://sep.shaparak.ir/OnlinePG/OnlinePG"
 _SENDTOKEN_URL = "https://sep.shaparak.ir/OnlinePG/SendToken"
 _VERIFY_URL = "https://sep.shaparak.ir/verifyTxnRandomSessionkey/ipg/VerifyTransaction"
-_REVERSE_URL = "https://sep.shaparak.ir/verifyTxnRandomSessionkey/ipg/ReverseTransaction"
+_REVERSE_URL = (
+    "https://sep.shaparak.ir/verifyTxnRandomSessionkey/ipg/ReverseTransaction"
+)
 
 # کدهای State در callback (جدول وضعیت تراکنش، صفحه ۱۴)
 _STATE_OK = "OK"
@@ -128,7 +130,9 @@ class SamanGateway(BaseGateway):
         # هدایت: فرم POST با فیلد Token به آدرس پرداخت توصیه‌ی مستند است؛ ولی
         # redirect_url قابل‌استفاده‌ی ساده (GET) را هم می‌دهیم. لایه‌ی Django
         # بهتر است فرم POST بسازد تا Referrer هم ارسال شود (الزام مستند).
-        base = ipg_url.rsplit("/", 1)[0] if ipg_url else _SENDTOKEN_URL.rsplit("/", 1)[0]
+        base = (
+            ipg_url.rsplit("/", 1)[0] if ipg_url else _SENDTOKEN_URL.rsplit("/", 1)[0]
+        )
         redirect_url = f"{base}/SendToken?token={token}"
 
         return InitiateResult(
@@ -153,11 +157,7 @@ class SamanGateway(BaseGateway):
         می‌شود نه با توکن. اگر در extra نبود، authority استفاده می‌شود (سازگاری).
         """
         extra = extra or {}
-        ref_num = (
-            extra.get("ref_num")
-            or extra.get("RefNum")
-            or extra.get("refnum")
-        )
+        ref_num = extra.get("ref_num") or extra.get("RefNum") or extra.get("refnum")
         if not ref_num:
             raise GatewayPaymentError(
                 "درگاه سامان برای verify به RefNum (رسید دیجیتالی) نیاز دارد "

@@ -90,8 +90,12 @@ def initiate():
 
     post_to = r.raw.get("post_to") or _TOKEN_URL
     form_path = _write_redirect_form(r.authority, post_to)
-    print(f"\n👉 این فایل را در مرورگر باز کن تا به درگاه بروی:\n   file://{form_path}\n")
-    print("پس از پرداخت، RefNum را از صفحه‌ی رسید یا از POSTِ callback بردار و اجرا کن:")
+    print(
+        f"\n👉 این فایل را در مرورگر باز کن تا به درگاه بروی:\n   file://{form_path}\n"
+    )
+    print(
+        "پس از پرداخت، RefNum را از صفحه‌ی رسید یا از POSTِ callback بردار و اجرا کن:"
+    )
     print(f"   uv run python scripts/test_saman.py verify <REFNUM> {r.amount_to_send}")
 
 

@@ -11,7 +11,7 @@ import pytest
 from django_iranian_payment.core.base import InMemoryTransport
 from django_iranian_payment.core.fee import FeeConfig, FeePayer
 from django_iranian_payment.core.models import PaymentRequest, PaymentStatus
-from django_iranian_payment.core.gateways.mellat import MellatGateway
+from django_iranian_payment.core.experimental.mellat import MellatGateway
 from django_iranian_payment.core.exceptions import (
     GatewayPaymentError,
     GatewayConfigurationError,
@@ -56,9 +56,7 @@ def test_mellat_initiate_with_fee():
 def test_mellat_initiate_rejected():
     t = InMemoryTransport({"bpPayRequest": "21,"})  # کد 21: پذیرنده نامعتبر
     with pytest.raises(GatewayPaymentError) as exc:
-        _gw(t).initiate(
-            PaymentRequest(amount=1000, callback_url="cb", order_id="1")
-        )
+        _gw(t).initiate(PaymentRequest(amount=1000, callback_url="cb", order_id="1"))
     assert exc.value.code == "21"
 
 
@@ -98,7 +96,9 @@ def test_mellat_verify_only_uses_verify_method():
 def test_mellat_verify_already_verified_is_duplicate():
     t = InMemoryTransport({"bpVerifySettleRequest": "43"})  # قبلاً verify
     res = _gw(t).verify(
-        authority="R", amount=1000, order_id="1",
+        authority="R",
+        amount=1000,
+        order_id="1",
         extra={"sale_reference_id": "5"},
     )
     assert res.is_success
@@ -108,7 +108,9 @@ def test_mellat_verify_already_verified_is_duplicate():
 def test_mellat_verify_failed():
     t = InMemoryTransport({"bpVerifySettleRequest": "17"})  # کاربر منصرف شد
     res = _gw(t).verify(
-        authority="R", amount=1000, order_id="1",
+        authority="R",
+        amount=1000,
+        order_id="1",
         extra={"sale_reference_id": "5"},
     )
     assert not res.is_success
@@ -119,14 +121,19 @@ def test_mellat_verify_missing_sale_reference_raises():
     t = InMemoryTransport({"bpVerifySettleRequest": "0"})
     with pytest.raises(GatewayPaymentError) as exc:
         _gw(t).verify(authority="R", amount=1000, order_id="1")  # بدون extra
-    assert "sale_reference_id" in str(exc.value).lower() or exc.value.code == "missing_sale_reference_id"
+    assert (
+        "sale_reference_id" in str(exc.value).lower()
+        or exc.value.code == "missing_sale_reference_id"
+    )
 
 
 def test_mellat_sale_order_id_defaults_to_order_id():
     # اگر sale_order_id در extra نباشد، باید با order_id یکسان شود
     t = InMemoryTransport({"bpVerifySettleRequest": "0"})
     _gw(t).verify(
-        authority="R", amount=1000, order_id="55",
+        authority="R",
+        amount=1000,
+        order_id="55",
         extra={"sale_reference_id": "5"},
     )
     assert t.requests_log[0]["params"]["saleOrderId"] == 55
@@ -184,10 +191,6 @@ def test_mellat_invalid_settle_mode_raises():
     t = InMemoryTransport({"bpVerifySettleRequest": "0"})
     gw = _gw(t, settle_mode="bogus")
     with pytest.raises(GatewayConfigurationError):
-        gw.verify(authority="R", amount=1, order_id="1", extra={"sale_reference_id": "5"})
-
-
-def test_mellat_in_public_registry():
-    from django_iranian_payment.core.gateways import available_slugs, get_gateway_class
-    assert "mellat" in available_slugs()
-    assert get_gateway_class("mellat") is MellatGateway
+        gw.verify(
+            authority="R", amount=1, order_id="1", extra={"sale_reference_id": "5"}
+        )

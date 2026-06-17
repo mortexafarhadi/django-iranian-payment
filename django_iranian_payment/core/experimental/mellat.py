@@ -31,13 +31,13 @@
 
 from datetime import datetime
 
-from ..base import BaseGateway
-from ..exceptions import (
+from django_iranian_payment.core.base import BaseGateway
+from django_iranian_payment.core.exceptions import (
     GatewayConfigurationError,
     GatewayConnectionError,
     GatewayPaymentError,
 )
-from ..models import (
+from django_iranian_payment.core.models import (
     InitiateResult,
     PaymentRequest,
     PaymentResult,

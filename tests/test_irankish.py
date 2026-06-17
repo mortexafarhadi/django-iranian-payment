@@ -77,9 +77,7 @@ def test_irankish_initiate_with_fee(monkeypatch):
 
 
 def test_irankish_initiate_rejected(monkeypatch):
-    t = InMemoryTransport(
-        {_TOKEN_URL: {"responseCode": "99", "description": "خطا"}}
-    )
+    t = InMemoryTransport({_TOKEN_URL: {"responseCode": "99", "description": "خطا"}})
     with pytest.raises(GatewayPaymentError) as exc:
         _gw(t, monkeypatch).initiate(
             PaymentRequest(amount=1000, callback_url="cb", order_id="1")
@@ -163,6 +161,7 @@ def test_irankish_verify_missing_reference_id_raises():
 
 def test_irankish_missing_public_key_raises():
     from django_iranian_payment.core.base import InMemoryTransport as T
+
     conf = {k: v for k, v in CONF.items() if k != "public_key"}
     with pytest.raises(GatewayConfigurationError):
         IrankishGateway(conf, transport=T({}))
@@ -217,5 +216,5 @@ def test_irankish_importable_from_experimental():
     from django_iranian_payment.core.experimental.irankish import (
         IrankishGateway as G,
     )
-    assert G is IrankishGateway
 
+    assert G is IrankishGateway

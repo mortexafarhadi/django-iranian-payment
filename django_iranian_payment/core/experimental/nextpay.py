@@ -166,7 +166,9 @@ class NextPayGateway(BaseGateway):
 
     # ---------- refund (عودت/لغو) ----------
 
-    def refund(self, *, authority: str, amount: int, order_id: str = "") -> PaymentResult:
+    def refund(
+        self, *, authority: str, amount: int, order_id: str = ""
+    ) -> PaymentResult:
         """
         عودت یک تراکنش موفق. تا ۲۰ دقیقه پس از تأیید. روی همان endpoint verify
         با refund_request="yes_money_back". کد موفقیت عودت -90 است.

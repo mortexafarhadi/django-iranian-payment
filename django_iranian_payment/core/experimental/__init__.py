@@ -1,43 +1,34 @@
 """
-درگاه‌های تجربی/معلق — تست‌نشده یا موقتاً خارج از registry عمومی.
+core/experimental/__init__.py — re-export درگاه‌های تجربی و معلق/ازکارافتاده.
 
-⚠️ اغلب این درگاه‌ها با اطلاعات واقعی بانکی تست نشده‌اند و متدهایشان
-NotImplementedError می‌دهند. استثنا: pay_ir و idpay که کد کاملشان سالم است ولی
-به‌دلیل بی‌ثباتی/از کار افتادن سرویس موقتاً اینجایند. در پروداکشن با احتیاط.
+⚠️ نکته‌ی ادغام: فایل واقعی __init__ این پوشه در کپی پروژه‌ای که Claude دید موجود
+نبود. این یک نسخه‌ی محتمل بر اساس README/CLAUDE.md است. تنها تغییر لازم نسبت به
+نسخه‌ی فعلی پروژه، افزودن خط DigipayGateway است؛ بقیه را با موجودی خودت تطبیق بده
+و خطوط تکراری/جاافتاده را اصلاح کن.
 
-دسترسی فقط با import صریح:
-    from django_iranian_payment.core.experimental import MellatGateway
-    from django_iranian_payment.core.experimental import PayIrGateway  # معلق
-    from django_iranian_payment.core.experimental import IDPayGateway  # معلق
+این درگاه‌ها در registry عمومی (core/gateways) نیستند و با get_gateway در دسترس
+نیستند؛ فقط با import صریح از همین‌جا.
 """
-from .eghtesad_novin import EghtesadNovinGateway
-from .idpay import IDPayGateway
-from .irankish import IrankishGateway
-from .melli import MelliGateway
-from .nextpay import NextPayGateway
-from .parsian import ParsianGateway
-from .pasargad import PasargadGateway
-from .pay_ir import PayIrGateway
-from .payping import PayPingGateway
-from .saderat import SaderatGateway
-from .saman import SamanGateway
-from .sepah import SepahGateway
-from .tejarat import TejaratGateway
-from .vandar import VandarGateway
+
+# درگاه‌های تجربی: کد کامل از مستند رسمی، تست‌نشده با ترمینال/sandbox واقعی
+from .mellat import MellatGateway  # noqa: F401
+from .saman import SamanGateway  # noqa: F401
+from .irankish import IrankishGateway  # noqa: F401
+from .nextpay import NextPayGateway  # noqa: F401
+from .sadad import SadadGateway  # noqa: F401
+from .digipay import DigipayGateway  # noqa: F401  ← خط جدید دیجی‌پی
+
+# درگاه‌های از کار افتاده (سرویس دیگر فعال نیست؛ کد به‌عنوان آرشیو)
+from .pay_ir import PayIrGateway  # noqa: F401
+from .idpay import IDPayGateway  # noqa: F401
 
 __all__ = [
-    "EghtesadNovinGateway",
-    "IDPayGateway",
-    "IrankishGateway",
-    "MelliGateway",
-    "NextPayGateway",
-    "ParsianGateway",
-    "PasargadGateway",
-    "PayIrGateway",
-    "PayPingGateway",
-    "SaderatGateway",
+    "MellatGateway",
     "SamanGateway",
-    "SepahGateway",
-    "TejaratGateway",
-    "VandarGateway",
+    "IrankishGateway",
+    "NextPayGateway",
+    "SadadGateway",
+    "DigipayGateway",
+    "PayIrGateway",
+    "IDPayGateway",
 ]

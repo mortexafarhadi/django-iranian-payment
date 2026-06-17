@@ -5,11 +5,11 @@ registry عمومی — فقط درگاه‌های تست‌شده و پایدا
 - pay_ir: بی‌ثباتی شبکهٔ پرداخت پی.
 - idpay: سرویس از کار افتاده (آخرین فعالیت پشتیبانی ~2025-11-20).
 """
-from .mellat import MellatGateway
+
 from .zarinpal import ZarinpalGateway
 from .zibal import ZibalGateway
 
-_REGISTRY = {cls.slug: cls for cls in (ZarinpalGateway, ZibalGateway, MellatGateway)}
+_REGISTRY = {cls.slug: cls for cls in (ZarinpalGateway, ZibalGateway)}
 
 
 def available_slugs():

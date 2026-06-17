@@ -71,9 +71,7 @@ def test_nextpay_initiate_rejected():
 def test_nextpay_initiate_code_as_string():
     # code گاهی رشته می‌آید؛ باید درست تفسیر شود
     t = InMemoryTransport({_TOKEN_URL: {"code": "-1", "trans_id": "TID"}})
-    res = _gw(t).initiate(
-        PaymentRequest(amount=1000, callback_url="cb", order_id="1")
-    )
+    res = _gw(t).initiate(PaymentRequest(amount=1000, callback_url="cb", order_id="1"))
     assert res.authority == "TID"
 
 
@@ -136,7 +134,9 @@ def test_nextpay_verify_ignores_extra():
 
 
 def test_nextpay_refund_success():
-    t = InMemoryTransport({_VERIFY_URL: {"code": -90, "Shaparak_Ref_Id": "1", "order_id": "85NX"}})
+    t = InMemoryTransport(
+        {_VERIFY_URL: {"code": -90, "Shaparak_Ref_Id": "1", "order_id": "85NX"}}
+    )
     res = _gw(t).refund(authority="TID", amount=74_250, order_id="85NX")
     assert res.status == PaymentStatus.CANCELLED
     sent = t.requests_log[0]["json"]
@@ -157,4 +157,5 @@ def test_nextpay_importable_from_experimental():
     from django_iranian_payment.core.experimental.nextpay import (
         NextPayGateway as G,
     )
+
     assert G is NextPayGateway

@@ -31,25 +31,25 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from django_iranian_payment.core.gateways.mellat import MellatGateway
+from django_iranian_payment.core.experimental.mellat import MellatGateway
 from django_iranian_payment.core.models import PaymentRequest
 from django_iranian_payment.core.exceptions import GatewayError
 
 # --- پیکربندی (پر کن) ---
-TERMINAL_ID = "0000000"          # TODO: terminalId واقعی
-USERNAME = "your-username"       # TODO: userName واقعی
-PASSWORD = "your-password"       # TODO: userPassword واقعی
-SETTLE_MODE = "verify_settle"    # یا "verify_only"
+TERMINAL_ID = "9029724"  # TODO: terminalId واقعی
+USERNAME = "9029724"  # TODO: userName واقعی
+PASSWORD = "69662620"  # TODO: userPassword واقعی
+SETTLE_MODE = "verify_settle"  # یا "verify_only"
 CONFIG = {
     "terminal_id": TERMINAL_ID,
     "username": USERNAME,
     "password": PASSWORD,
     "settle_mode": SETTLE_MODE,
 }
-SANDBOX = True                   # True = pgw.dev.bpmellat.ir
-AMOUNT = 10_000                  # ریال
+SANDBOX = True  # True = pgw.dev.bpmellat.ir
+AMOUNT = 10_000  # ریال
 CALLBACK = "https://example.com/callback/"  # باید در دامنه‌ی ثبت‌شده باشد
-ORDER_ID = "1001"                # ملت orderId عددی می‌خواهد (یکتا)
+ORDER_ID = "1001"  # ملت orderId عددی می‌خواهد (یکتا)
 
 
 def gateway():
@@ -90,7 +90,9 @@ def initiate():
     with open(out, "w", encoding="utf-8") as f:
         f.write(html)
     print(f"\n👉 فایل {out} را در مرورگر باز کن تا به درگاه ملت POST شود.")
-    print("پس از پرداخت، از callback (POST) مقادیر SaleReferenceId و SaleOrderId را بردار:")
+    print(
+        "پس از پرداخت، از callback (POST) مقادیر SaleReferenceId و SaleOrderId را بردار:"
+    )
     print(
         f"   uv run python scripts/test_mellat.py verify {ORDER_ID} <SALE_ORDER_ID> <SALE_REFERENCE_ID>"
     )
@@ -133,7 +135,9 @@ def settle(order_id, sale_order_id, sale_reference_id):
     except GatewayError as e:
         print(f"❌ {type(e).__name__}: {e}")
         return
-    print(f"{'✅' if r.is_success else '❌'} status={r.status.value} code={r.error_code or '0'}")
+    print(
+        f"{'✅' if r.is_success else '❌'} status={r.status.value} code={r.error_code or '0'}"
+    )
 
 
 def reverse(order_id, sale_order_id, sale_reference_id):
