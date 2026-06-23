@@ -19,6 +19,14 @@ def pytest_configure():
                 "zarinpal": {"merchant_id": "test-merchant"},
             },
         },
+        TEMPLATES=[
+            {
+                "BACKEND": "django.template.backends.django.DjangoTemplates",
+                "DIRS": [],
+                "APP_DIRS": True,
+                "OPTIONS": {"context_processors": []},
+            }
+        ],
         USE_TZ=True,
         DEFAULT_AUTO_FIELD="django.db.models.BigAutoField",
         ROOT_URLCONF="urls_test",

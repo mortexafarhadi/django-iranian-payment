@@ -98,6 +98,10 @@ def initiate():
     )
 
 
+###
+### بلافاصله پس از بازگشت مشتری از بانک
+### بررسی صحت تراکنش و اعلام قبولی اولیه به بانک
+###
 def verify(order_id, sale_order_id, sale_reference_id):
     print(f"=== ملت: مرحله‌ی ۲ (verify، حالت {SETTLE_MODE}) ===")
     try:
@@ -124,6 +128,10 @@ def verify(order_id, sale_order_id, sale_reference_id):
         )
 
 
+###
+### پس از verify (اگر واریز آنی فعال نباشد)
+### قطعی کردن انتقال پول از بانک به حساب شما
+###
 def settle(order_id, sale_order_id, sale_reference_id):
     print("=== ملت: settle (bpSettleRequest) ===")
     try:
@@ -140,6 +148,10 @@ def settle(order_id, sale_order_id, sale_reference_id):
     )
 
 
+###
+### هنگام بروز خطا در سیستم شما پس از پرداخت
+### بازگرداندن فوری پول به حساب مشتری
+###
 def reverse(order_id, sale_order_id, sale_reference_id):
     print("=== ملت: reverse (bpReversalRequest) ===")
     try:

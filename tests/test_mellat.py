@@ -36,7 +36,10 @@ def test_mellat_initiate_success():
     )
     assert res.authority == "AF82041a2Bf6989c7fF9"
     assert res.amount_to_send == 10_000
-    assert "AF82041a2Bf6989c7fF9" in res.redirect_url
+    # ملت با POST فرم کار می‌کند؛ redirect_url مقصد فرم است و RefId در redirect_fields است
+    assert "startpay.mellat" in res.redirect_url
+    assert res.redirect_method == "POST"
+    assert res.redirect_fields == {"RefId": "AF82041a2Bf6989c7fF9"}
     # مبلغ واقعی به بانک رفت
     assert t.requests_log[0]["params"]["amount"] == 10_000
     assert t.requests_log[0]["params"]["orderId"] == 100

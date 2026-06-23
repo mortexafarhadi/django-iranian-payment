@@ -63,6 +63,12 @@ class InitiateResult:
     amount_to_send: int = 0  # مبلغ واقعی ارسال‌شده (با کارمزد). همین را در verify بده.
     fee: int = 0  # کارمزد محاسبه‌شده (برای ثبت/گزارش)
     raw: dict = field(default_factory=dict)
+    redirect_method: str = (
+        "GET"  # روش هدایت: GET (redirect ساده) یا POST (فرم auto-submit)
+    )
+    redirect_fields: dict = field(
+        default_factory=dict
+    )  # فیلدهای فرم POST (مثلاً RefId ملت)
 
 
 @dataclass

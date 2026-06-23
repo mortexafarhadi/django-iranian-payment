@@ -43,6 +43,7 @@ htmlcov/
 *.pem
 *.key
 secrets.*
+.claude/
 
 # ─── IDE / editor ───
 .vscode/

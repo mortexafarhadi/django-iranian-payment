@@ -59,13 +59,19 @@ def start_payment(
 
     result = gw.initiate(req)
 
+    raw = dict(result.raw or {})
+    if result.redirect_method != "GET":
+        raw["redirect_method"] = result.redirect_method
+    if result.redirect_fields:
+        raw["redirect_fields"] = result.redirect_fields
+
     payment.mark(
         PaymentStatus.REDIRECT_TO_BANK,
         authority=result.authority or "",
         redirect_url=result.redirect_url or "",
         amount_sent=result.amount_to_send,
         fee=result.fee,
-        raw=result.raw or {},
+        raw=raw,
     )
     return payment, result.redirect_url
 

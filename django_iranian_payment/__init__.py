@@ -23,7 +23,7 @@ from .core import (
 )
 from .core.django_integration import get_gateway
 
-__version__ = "0.4.2"
+__version__ = "0.4.3"
 
 __all__ = [
     "get_gateway",

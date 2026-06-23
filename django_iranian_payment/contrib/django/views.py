@@ -11,7 +11,7 @@ services استفاده کند و view خودش را بنویسد.
 """
 
 from django.http import Http404, HttpResponseRedirect
-from django.shortcuts import get_object_or_404
+from django.shortcuts import get_object_or_404, render
 
 from . import services
 from .models import Payment
@@ -32,17 +32,23 @@ def _extract_authority(request, slug):
 def _extract_extra(request):
     """
     داده‌ی اضافی callback را برای درگاه‌هایی که در verify به آن نیاز دارند
-    استخراج می‌کند. ملت در callbackِ POST مقادیر SaleReferenceId و SaleOrderId
-    را برمی‌گرداند که برای bpVerifyRequest/bpVerifySettleRequest لازم‌اند.
+    استخراج می‌کند:
+    - ملت: SaleReferenceId و SaleOrderId (POST) برای bpVerifySettleRequest
+    - دیجی‌پی: trackingCode (GET/POST) برای purchases/verify
     """
     params = request.POST if request.method == "POST" else request.GET
     extra = {}
+    # ملت
     sale_ref = params.get("SaleReferenceId") or params.get("saleReferenceId")
     sale_order = params.get("SaleOrderId") or params.get("saleOrderId")
     if sale_ref:
         extra["sale_reference_id"] = sale_ref
     if sale_order:
         extra["sale_order_id"] = sale_order
+    # دیجی‌پی
+    tracking_code = params.get("trackingCode") or params.get("tracking_code")
+    if tracking_code:
+        extra["tracking_code"] = tracking_code
     return extra or None
 
 
@@ -70,8 +76,20 @@ def go_to_gateway(request, payment_id):
     """
     کاربر را به درگاه بانک می‌فرستد. (برای حالتی که redirect_url را در DB ذخیره
     کرده‌ای و می‌خواهی بعداً هدایت کنی.)
+    درگاه‌هایی که POST فرم می‌خواهند (مثل ملت) با template auto-submit مدیریت می‌شوند.
     """
     payment = get_object_or_404(Payment, pk=payment_id)
     if not payment.redirect_url:
         raise Http404("redirect_url برای این پرداخت ذخیره نشده است.")
+
+    if payment.raw.get("redirect_method") == "POST":
+        return render(
+            request,
+            "iranian_payment/post_redirect.html",
+            {
+                "action": payment.redirect_url,
+                "fields": payment.raw.get("redirect_fields", {}),
+            },
+        )
+
     return HttpResponseRedirect(payment.redirect_url)

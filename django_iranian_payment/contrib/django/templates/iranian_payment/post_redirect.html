@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>در حال انتقال به درگاه پرداخت...</title>
+<style>body{font-family:Tahoma,sans-serif;text-align:center;padding:60px;direction:rtl}</style>
+</head>
+<body>
+<p>در حال انتقال به درگاه پرداخت، لطفاً صبر کنید...</p>
+<form id="gw-form" method="POST" action="{{ action }}">
+  {% for name, value in fields.items %}
+    <input type="hidden" name="{{ name }}" value="{{ value }}">
+  {% endfor %}
+</form>
+<script>document.getElementById("gw-form").submit();</script>
+<noscript>
+  <p>برای ادامه روی دکمه‌ی زیر کلیک کنید:</p>
+  <button form="gw-form" type="submit">انتقال به درگاه</button>
+</noscript>
+</body>
+</html>

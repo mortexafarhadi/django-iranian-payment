@@ -143,7 +143,7 @@ class MellatGateway(BaseGateway):
             "localTime": now.strftime("%H%M%S"),
             "additionalData": request.description or "",
             "callBackUrl": request.callback_url,
-            "payerId": 0,
+            "payerId": "0",
         }
 
         result = self._call("bpPayRequest", **params)
@@ -169,9 +169,11 @@ class MellatGateway(BaseGateway):
 
         ref_id = parts[1].strip()
         return InitiateResult(
-            # ملت با POST فرم به startpay می‌رود؛ redirect_url صرفاً مقصد فرم است.
-            # لایه‌ی Django باید فرم auto-submit با فیلد RefId بسازد.
-            redirect_url=f"{self.startpay_url}?RefId={ref_id}",
+            # ملت با POST فرم به startpay می‌رود (مستند نگارش ۱.۳۸، بخش ۲.۲).
+            # redirect_url مقصد فرم است؛ RefId باید در بدنه‌ی POST ارسال شود.
+            redirect_url=self.startpay_url,
+            redirect_method="POST",
+            redirect_fields={"RefId": ref_id},
             authority=ref_id,
             amount_to_send=amount_to_send,
             fee=fee_result.fee,
