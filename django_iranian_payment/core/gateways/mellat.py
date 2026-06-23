@@ -1,6 +1,12 @@
 """
 درگاه به‌پرداخت ملت — SOAP. پیاده‌سازی بر اساس مستند رسمی نگارش ۱.۳۸.
 
+✅ این درگاه با ترمینال/قرارداد واقعی روی محیط عملیاتی (bpm.shaparak.ir) تست شد:
+   تراکنش موفق (ResCode=0، SaleReferenceId، CardHolderPan، FinalAmount دریافت شد)
+   و سناریوی کنسل توسط کاربر (ResCode=17 بدون SaleReferenceId) هم تأیید شد. طبق
+   قانون طلایی پروژه (تست واقعی پیش از عمومی‌شدن) به registry عمومی منتقل شد و با
+   get_gateway("mellat") در دسترس است.
+
 روند کامل (طبق مستند):
 1. initiate → bpPayRequest: خروجی "ResCode,RefId" است. اگر ResCode == "0"،
    RefId را با POST فرم به startpay می‌فرستیم (نه redirect ساده). این درگاه
@@ -208,6 +214,32 @@ class MellatGateway(BaseGateway):
     def verify(
         self, *, authority: str, amount: int, order_id: str, extra: dict = None
     ) -> PaymentResult:
+        extra = extra or {}
+
+        # بررسی ResCode از callbackِ POST بانک — قبل از هر فراخوانی SOAP.
+        # اگر کاربر کنسل کرده (کد 17) یا پرداخت ناموفق بوده، SaleReferenceId
+        # در callback نیست؛ نباید verify SOAP زده شود.
+        callback_res_code = extra.get("res_code") or extra.get("ResCode")
+        if callback_res_code and callback_res_code != _RES_OK:
+            status = (
+                PaymentStatus.CANCELLED
+                if callback_res_code == "17"
+                else PaymentStatus.FAILED
+            )
+            msg = (
+                "کاربر پرداخت را لغو کرد"
+                if callback_res_code == "17"
+                else f"پرداخت ناموفق در درگاه ملت"
+            )
+            return PaymentResult(
+                status=status,
+                gateway_slug=self.slug,
+                order_id=order_id,
+                error_code=callback_res_code,
+                error_message=f"ملت (کد {callback_res_code}): {msg}",
+                raw={"res_code": callback_res_code, "source": "callback"},
+            )
+
         sale_reference_id, sale_order_id = self._resolve_sale_ids(
             authority, order_id, extra
         )
@@ -238,7 +270,19 @@ class MellatGateway(BaseGateway):
                 order_id=order_id,
                 reference_id=str(sale_reference_id),
                 amount=amount,
-                raw={"res_code": res_code, "settle_mode": self._settle_mode},
+                card_number=extra.get("card_number")
+                or extra.get("CardHolderPan")
+                or "",
+                # sale_order_id و sale_reference_id برای settle/reverse بعدی لازم‌اند؛
+                # در raw ذخیره می‌شوند تا لایه‌ی Django آن‌ها را در payment.raw نگه دارد.
+                raw={
+                    "res_code": res_code,
+                    "settle_mode": self._settle_mode,
+                    "sale_order_id": str(sale_order_id),
+                    "sale_reference_id": str(sale_reference_id),
+                    "final_amount": extra.get("final_amount")
+                    or extra.get("FinalAmount"),
+                },
             )
 
         return PaymentResult(

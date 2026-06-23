@@ -11,7 +11,7 @@ import pytest
 from django_iranian_payment.core.base import InMemoryTransport
 from django_iranian_payment.core.fee import FeeConfig, FeePayer
 from django_iranian_payment.core.models import PaymentRequest, PaymentStatus
-from django_iranian_payment.core.experimental.mellat import MellatGateway
+from django_iranian_payment.core.gateways.mellat import MellatGateway
 from django_iranian_payment.core.exceptions import (
     GatewayPaymentError,
     GatewayConfigurationError,
@@ -109,7 +109,8 @@ def test_mellat_verify_already_verified_is_duplicate():
 
 
 def test_mellat_verify_failed():
-    t = InMemoryTransport({"bpVerifySettleRequest": "17"})  # کاربر منصرف شد
+    # کد 17 از SOAP (نه از callback) — sale_reference_id لازم است
+    t = InMemoryTransport({"bpVerifySettleRequest": "17"})
     res = _gw(t).verify(
         authority="R",
         amount=1000,
@@ -118,6 +119,54 @@ def test_mellat_verify_failed():
     )
     assert not res.is_success
     assert res.error_code == "17"
+
+
+def test_mellat_verify_cancelled_via_callback_rescode():
+    # کاربر در درگاه کنسل کرد — ResCode=17 در POST بانک، بدون SaleReferenceId
+    # نباید SOAP صدا زده شود
+    t = InMemoryTransport({})
+    res = _gw(t).verify(
+        authority="E6DB1B0A16598B9B",
+        amount=10_000,
+        order_id="1",
+        extra={"res_code": "17", "sale_order_id": "1"},  # بدون sale_reference_id
+    )
+    assert not res.is_success
+    assert res.status == PaymentStatus.CANCELLED
+    assert res.error_code == "17"
+    assert len(t.requests_log) == 0  # هیچ فراخوانی SOAP نشد
+
+
+def test_mellat_verify_failed_via_callback_rescode():
+    # پرداخت ناموفق در درگاه (کد غیر از 0 و 17)
+    t = InMemoryTransport({})
+    res = _gw(t).verify(
+        authority="REF",
+        amount=10_000,
+        order_id="1",
+        extra={"res_code": "55"},
+    )
+    assert not res.is_success
+    assert res.status == PaymentStatus.FAILED
+    assert res.error_code == "55"
+    assert len(t.requests_log) == 0
+
+
+def test_mellat_verify_success_stores_card_number():
+    # CardHolderPan از callback باید در PaymentResult.card_number ذخیره شود
+    t = InMemoryTransport({"bpVerifySettleRequest": "0"})
+    res = _gw(t).verify(
+        authority="FBEE756D5103F215",
+        amount=10_000,
+        order_id="1",
+        extra={
+            "sale_reference_id": "349653646467",
+            "sale_order_id": "1",
+            "card_number": "621986******0739",
+        },
+    )
+    assert res.is_success
+    assert res.card_number == "621986******0739"
 
 
 def test_mellat_verify_missing_sale_reference_raises():

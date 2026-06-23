@@ -217,21 +217,20 @@ def test_idpay_still_importable_from_experimental():
     assert IDPayGateway.slug == "idpay"
 
 
-# ============== رگرسیون: ملت تجربی و خارج از registry ==============
+# ============== رگرسیون: ملت پس از تست واقعی به registry عمومی منتقل شد ==============
 
 
-def test_mellat_not_in_public_registry():
-    # ملت چون هیچ تست sandbox/واقعی ندارد به experimental منتقل شد (قانون طلایی)
+def test_mellat_in_public_registry():
+    # ملت با تراکنش واقعی روی محیط عملیاتی تست شد و طبق قانون طلایی عمومی شد.
+    # این تست مانع بازگشت ناآگاهانه به experimental می‌شود.
     from django_iranian_payment.core.gateways import available_slugs, get_gateway_class
-    from django_iranian_payment.core.exceptions import GatewayConfigurationError
 
-    assert "mellat" not in available_slugs()
-    with pytest.raises(GatewayConfigurationError):
-        get_gateway_class("mellat")
+    assert "mellat" in available_slugs()
+    assert get_gateway_class("mellat").slug == "mellat"
 
 
-def test_mellat_still_importable_from_experimental():
-    # پیاده‌سازی کامل از مستند رسمی؛ با import صریح در دسترس است
-    from django_iranian_payment.core.experimental.mellat import MellatGateway
+def test_mellat_no_longer_in_experimental():
+    # دیگر نباید از experimental قابل import باشد (به gateways منتقل شد)
+    from django_iranian_payment.core import experimental
 
-    assert MellatGateway.slug == "mellat"
+    assert not hasattr(experimental, "MellatGateway")

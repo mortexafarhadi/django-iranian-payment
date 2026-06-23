@@ -12,16 +12,26 @@
 
 ## درگاه‌های آماده و تست‌شده (registry عمومی)
 
-تنها این دو درگاه با تست واقعی sandbox (در `scripts/`) راستی‌آزمایی شده و با
-`get_gateway("slug")` در دسترس‌اند:
+این درگاه‌ها راستی‌آزمایی شده و با `get_gateway("slug")` در دسترس‌اند:
 
-| درگاه | نوع | وضعیت |
-|-------|-----|--------|
-| **زرین‌پال** | REST/JSON | sandbox تست‌شده (تراکنش live هنوز تست نشده) |
-| **زیبال** | REST/JSON | sandbox تست‌شده (تراکنش live هنوز تست نشده) |
+| درگاه | نوع | وضعیت | وابستگی اختیاری |
+|-------|-----|--------|------------------|
+| **زرین‌پال** | REST/JSON | sandbox تست‌شده (تراکنش live هنوز تست نشده) | — |
+| **زیبال** | REST/JSON | sandbox تست‌شده (تراکنش live هنوز تست نشده) | — |
+| **ملت** | SOAP | ✅ **تراکنش live واقعی تست‌شده** | `[soap]` (zeep) |
 
 > ⚠️ هشدار صداقت: «sandbox تست‌شده» یعنی روند با ترمینال آزمایشی کار کرد، نه اینکه
-> با ترمینال/قرارداد واقعی پول جابه‌جا شده باشد. تراکنش واقعی هیچ درگاهی هنوز تست نشده.
+> با ترمینال/قرارداد واقعی پول جابه‌جا شده باشد. زرین‌پال/زیبال هنوز تراکنش live
+> نشده‌اند. **ملت** اما با ترمینال/قرارداد واقعی روی محیط عملیاتی (bpm.shaparak.ir)
+> تست شد: تراکنش موفق (ResCode=0، SaleReferenceId، CardHolderPan، FinalAmount) و
+> سناریوی کنسل کاربر (ResCode=17) هر دو تأیید شدند.
+
+> ⚠️ **ملت** نیاز به `zeep` دارد: `pip install "django-iranian-payment[soap]"`.
+> ملت دومرحله‌ای است؛ حالت پیش‌فرض `verify_settle` (تأیید+واریز اتمیک) توصیه می‌شود.
+> برای واریز با تأخیر، `settle_mode="verify_only"` را در config بگذار و خودت
+> `settle()` را صدا بزن (وگرنه بانک در ۳ ساعت Autoreversal می‌زند). هدایت کاربر به
+> ملت با **فرم POST** است (نه redirect ساده)؛ لایه‌ی Django این فرم auto-submit را
+> در view `go_to_gateway` خودکار می‌سازد.
 
 ## درگاه‌های تجربی (در `core.experimental`)
 
@@ -35,7 +45,6 @@ script سندباکسشان هم انجام نشده است.
 `get_gateway` در دسترس نیستند؛ فقط با import صریح:
 
 ```python
-from django_iranian_payment.core.experimental.mellat import MellatGateway
 from django_iranian_payment.core.experimental.saman import SamanGateway
 from django_iranian_payment.core.experimental.irankish import IrankishGateway
 from django_iranian_payment.core.experimental.nextpay import NextPayGateway
@@ -45,17 +54,14 @@ from django_iranian_payment.core.experimental.digipay import DigipayGateway
 
 | درگاه | نوع | رمزنگاری | وابستگی اختیاری |
 |-------|-----|----------|------------------|
-| **ملت** | SOAP | — | `[soap]` (zeep) |
 | **سامان (SEP)** | REST/JSON | — | — |
 | **ایران‌کیش** | REST/JSON | AES + RSA | `[irankish]` |
 | **نکست‌پی** | REST/JSON | — | — |
 | **سداد** | REST/JSON (WebApi) | 3DES | `[sadad]` |
 | **دیجی‌پی** | REST/JSON (OAuth2) | — | — |
 
-> ⚠️ **ملت** نیاز به `zeep` دارد: `pip install "django-iranian-payment[soap]"`.
-> ملت دومرحله‌ای است؛ حالت پیش‌فرض `verify_settle` (تأیید+واریز اتمیک) توصیه می‌شود.
-> برای واریز با تأخیر، `settle_mode="verify_only"` را در config بگذار و خودت
-> `settle()` را صدا بزن (وگرنه بانک در ۳ ساعت Autoreversal می‌زند).
+> ℹ️ **ملت** پیش‌تر تجربی بود؛ پس از تست تراکنش واقعی به registry عمومی منتقل شد
+> (بالاتر را ببین). دیگر از `core.experimental` import نمی‌شود.
 
 > **ایران‌کیش** و **سداد** به وابستگی رمزنگاری نیاز دارند:
 > `pip install "django-iranian-payment[irankish]"` (شامل `pycryptodome` و `rsa`) یا
@@ -101,13 +107,20 @@ IRANIAN_PAYMENT = {
     "gateways": {
         "zarinpal": {"merchant_id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"},
         "zibal": {"merchant": "zibal"},
+        "mellat": {
+            "terminal_id": "1234567",
+            "username": "your-username",
+            "password": "your-password",
+            "settle_mode": "verify_settle",  # یا "verify_only"
+        },
     },
 }
 ```
 
-> توجه: درگاه‌های تجربی (ملت، سامان، ...) چون در registry نیستند با این config و
-> `get_gateway` ساخته نمی‌شوند. برای استفاده از آن‌ها باید کلاسشان را مستقیم import
-> و دستی config کنی (پس از تست واقعی).
+> توجه: درگاه‌های تجربی (سامان، ایران‌کیش، ...) چون در registry نیستند با این config
+> و `get_gateway` ساخته نمی‌شوند. برای استفاده از آن‌ها باید کلاسشان را مستقیم
+> import و دستی config کنی (پس از تست واقعی). درگاه‌های registry عمومی
+> (زرین‌پال، زیبال، ملت) مستقیم با `get_gateway("slug")` در دسترس‌اند.
 
 برای استفاده از لایه‌ی ساده (مدل و ردیابی خودکار)، اپ را هم اضافه کن:
 
@@ -238,12 +251,16 @@ def verify_payment(request):
 
 برخی درگاه‌های شاپرکی در verify به داده‌ای فراتر از یک `authority` نیاز دارند که
 در callbackِ POST از بانک برمی‌گردد. این داده‌ها از طریق `extra` پاس داده می‌شوند.
-این درگاه‌ها فعلاً تجربی‌اند و باید کلاسشان را مستقیم import کنی:
+اگر از لایه‌ی Django استفاده کنی، view‌های پکیج این مقادیر را خودکار از callback
+استخراج و پاس می‌دهند.
 
 ```python
-# ملت (تجربی): به sale_reference_id و sale_order_id نیاز دارد
+# ملت (registry عمومی): به sale_reference_id و sale_order_id نیاز دارد.
+# اگر کاربر کنسل کرده باشد، res_code از callback (=17) را هم بده تا بدون
+# تماس SOAP وضعیت CANCELLED برگردد.
 gw.verify(authority=ref_id, amount=amount, order_id=oid,
-          extra={"sale_reference_id": "...", "sale_order_id": "..."})
+          extra={"sale_reference_id": "...", "sale_order_id": "...",
+                 "card_number": "...", "res_code": "0"})
 
 # سامان (تجربی): به RefNum نیاز دارد
 gw.verify(authority=token, amount=amount, order_id=oid,
@@ -302,12 +319,26 @@ PaymentRequest(amount=100_000, callback_url="...", order_id="1", fee=fee)
 آن لحظه با `get_gateway` در دسترس نیستند و فقط با import صریح قابل دسترسی‌اند:
 
 ```python
-from django_iranian_payment.core.experimental.mellat import MellatGateway
+from django_iranian_payment.core.experimental.saman import SamanGateway
 ```
+
+نمونه‌ی واقعی این ارتقا: **ملت** که پس از تست تراکنش live از `core.experimental` به
+`core.gateways` منتقل شد و حالا با `get_gateway("mellat")` در دسترس است.
 
 ---
 
 ## تاریخچه‌ی تغییرات درگاه‌ها
+
+- **۱۴۰۵/۰۴/۰۳** (نسخه‌ی `0.5.0`) — درگاه **ملت** پس از تست تراکنش واقعی روی محیط
+  عملیاتی (bpm.shaparak.ir) از `core.experimental` به registry عمومی منتقل شد و
+  حالا با `get_gateway("mellat")` در دسترس است. در جریان تست live دو باگ کشف و رفع
+  شد (هر دو تست رگرسیون دارند):
+  - کنسل کاربر (`ResCode=17` بدون `SaleReferenceId`) باعث crash می‌شد؛ حالا verify
+    ابتدا `res_code` از callback را بررسی و بدون تماس SOAP، `CANCELLED`/`FAILED`
+    برمی‌گرداند.
+  - `CardHolderPan` از callback ذخیره نمی‌شد. اکنون شماره‌ی کارت ماسک‌شده در
+    `card_number` و مقادیر `sale_order_id`/`sale_reference_id`/`final_amount` در
+    `raw` (مدل Payment) ذخیره می‌شوند تا برای `settle`/`reverse` بعدی در دسترس باشند.
 
 - **۱۴۰۵/۰۳/۲۷** — درگاه‌های مستقل **بانک تجارت** و **بانک ملی** حذف شدند. این
   بانک‌ها درگاه مستقل خود را کنار گذاشته‌اند و پرداخت را به PSPهای دیگر سپرده‌اند:

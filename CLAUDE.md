@@ -221,7 +221,9 @@ uv run python scripts/test_digipay.py verify <TRACKING_CODE> <AMOUNT>
 
 ## ۸. روند انتشار نسخه
 
-1. شماره را در **دو جا** بالا ببر: `pyproject.toml` و `django_iranian_payment/__init__.py`.
+1. شماره را فقط در `django_iranian_payment/__init__.py` (متغیر `__version__`) بالا ببر.
+   `pyproject.toml` نسخه را به‌صورت dynamic از همین attr می‌خواند
+   (`version = { attr = "django_iranian_payment.__version__" }`)، پس یک منبع است.
 2. نسخه‌بندی معنایی: رفع باگ → `0.1.x`، قابلیت جدید → `0.x.0`، پایدار → `1.0.0`.
 3. build تمیز: `rm -rf dist/ && uv build`
 4. آپلود (SOCKS برای دسترسی از ایران):
@@ -235,16 +237,21 @@ uv run python scripts/test_digipay.py verify <TRACKING_CODE> <AMOUNT>
 
 ## ۹. وضعیت فعلی و کارهای باز
 
-- ✅ هسته‌ی بدون state، ۲ درگاه در registry عمومی با تست sandbox موفق (script):
-  zarinpal/zibal (REST، sandbox باز، از هر IP قابل تست). توجه: فقط sandbox تست
-  شده — **تراکنش live هیچ‌کدام هنوز تست نشده**.
-- ⚠️ mellat (SOAP): کد کامل از مستند نگارش ۱.۳۸، منطق با soap_call تست‌شده (۱۶ تست
-  هسته + ۳ تست Django)، ولی **هیچ تست sandbox یا ترمینال واقعی نشده**. طبق قانون
-  طلایی به `core/experimental/` منتقل و از registry عمومی خارج شد (هم‌رده
-  saman/sadad). با import صریح در دسترس است. تست واقعی ملت برخلاف zarinpal/zibal
-  از لپ‌تاپ ممکن نیست؛ نیاز دارد به: (۱) ترمینال/قرارداد پذیرندگی واقعی، (۲) ثبت
-  IP سرور نزد ملت طی نامه (وگرنه کد 421)، (۳) دسترسی شبکه به bpm.shaparak.ir از
-  داخل ایران. عملاً باید روی سرور با IP ثبت‌شده اجرا شود.
+- ✅ هسته‌ی بدون state، ۳ درگاه در registry عمومی:
+  - zarinpal/zibal (REST، sandbox باز، از هر IP قابل تست). توجه: فقط sandbox تست
+    شده — **تراکنش live این دو هنوز تست نشده**.
+  - **mellat** (SOAP): با **تراکنش واقعی روی محیط عملیاتی (bpm.shaparak.ir)**
+    تست شد و طبق قانون طلایی به registry عمومی منتقل شد (۱۴۰۵/۰۴/۰۳). داده‌ی واقعی
+    تأییدشده: تراکنش موفق (ResCode=0، SaleReferenceId، CardHolderPan، FinalAmount)
+    و سناریوی کنسل کاربر (ResCode=17 بدون SaleReferenceId). برای فراخوانی به zeep
+    نیاز است: `pip install "django-iranian-payment[soap]"`. نکات تستِ واقعی: محیط
+    sandbox ملت (pgw.dev.bpmellat.ir) در عمل پاسخ نداد؛ تست روی live با ترمینال/
+    قرارداد واقعی، IP ثبت‌شده نزد ملت و دسترسی شبکه به bpm.shaparak.ir انجام شد.
+    دو باگ که در تست live کشف و رفع شد (تست رگرسیون دارند): (۱) کنسل کاربر بدون
+    SaleReferenceId باعث crash می‌شد — حالا verify ابتدا res_code از callback را
+    چک می‌کند و بدون تماس SOAP، CANCELLED/FAILED برمی‌گرداند؛ (۲) CardHolderPan از
+    callback ذخیره نمی‌شد. sale_order_id/sale_reference_id/final_amount در
+    PaymentResult.raw ذخیره می‌شوند تا settle/reverse بعدی در دسترس باشند.
 - ❌ pay_ir از کار افتاده: سرویس کلاً از دسترس خارج شده و دیگر سرویس نمی‌دهد.
   کد در core/experimental به‌عنوان آرشیو مانده ولی توصیه نمی‌شود. با import صریح
   هنوز در دسترس (برای صورت بازگشت احتمالی سرویس).
@@ -278,11 +285,11 @@ uv run python scripts/test_digipay.py verify <TRACKING_CODE> <AMOUNT>
 - ✅ لایه‌ی Django: مدل، state machine، سرویس، view، url، migration — ۸ تست.
 - ✅ تست view با Django TestClient (جریان کامل callback→redirect) — ۷ تست.
 - ✅ سوییت تست خودکار سبز (تعداد دقیق را با pytest بگیر، نه از این مستند — بخش ۶).
-- ⚠️ هنوز **هیچ تراکنش واقعی sandbox برای درگاه‌های تجربی تست نشده** — فقط منطق با
-  InMemoryTransport و monkeypatch. zarinpal/zibal تنها درگاه‌هایی‌اند که تست script
-  سندباکس دارند (در scripts/). ملت/سداد/سامان/ایران‌کیش/نکست‌پی به‌دلیل محدودیت‌های
-  دسترسی حتی تست script سندباکسشان هم انجام نشده و کدشان صرفاً از روی مستندات
-  رسمی نوشته شده است.
+- ⚠️ هنوز **هیچ تراکنش واقعی برای درگاه‌های تجربی تست نشده** — فقط منطق با
+  InMemoryTransport و monkeypatch. zarinpal/zibal تست script سندباکس دارند و mellat
+  تست تراکنش live دارد (هر سه در registry عمومی). سداد/سامان/ایران‌کیش/نکست‌پی/
+  دیجی‌پی به‌دلیل محدودیت‌های دسترسی حتی تست script سندباکسشان هم انجام نشده و
+  کدشان صرفاً از روی مستندات رسمی نوشته شده است.
 - ⬜ درگاه‌های تجربیِ باقی‌مانده اسکلت‌اند (منتظر مستندات واقعی هر بانک).
 - ⬜ celery/cron برای reverify_pending در مستندات هست ولی نمونه‌ی آماده ندارد.
 
@@ -301,11 +308,16 @@ uv run python scripts/test_digipay.py verify <TRACKING_CODE> <AMOUNT>
 - services: import نسبی `...core` (نه `..core`) از contrib/django.
 
 ### تصمیم‌های ثبت‌شده که نباید بی‌دلیل برگردند
-- ملت به experimental منتقل شد (از registry عمومی خارج). دارای ۱۶ تست هسته
-  (soap_call) + ۳ تست Django. دلیل: حتی تست sandbox هم نشده و طبق قانون طلایی
-  نباید عمومی باشد. دو تست رگرسیون باید این را قفل کنند:
-  `test_mellat_not_in_public_registry` و `test_mellat_still_importable_from_experimental`.
-  تغییر امضای verify (افزودن extra=None) نباید زرین‌پال/زیبال را بشکند؛ کل سوییت سبز است.
+- ملت پس از **تست تراکنش واقعی روی محیط عملیاتی** به registry عمومی منتقل شد
+  (۱۴۰۵/۰۴/۰۳) — از experimental خارج و به `core/gateways/mellat.py`. قبلاً به‌دلیل
+  نبود تست واقعی در experimental بود؛ حالا قانون طلایی برآورده شده. دو تست رگرسیون
+  این را قفل می‌کنند: `test_mellat_in_public_registry` و
+  `test_mellat_no_longer_in_experimental` (در test_gateways.py). اگر کسی ملت را
+  دوباره به experimental برگرداند، این تست‌ها باید بشکنند. نکته: ملت تنها درگاه
+  SOAP در registry است و برای فراخوانی به zeep (`[soap]`) نیاز دارد — ولی import
+  ماژولش بدون zeep هم سالم است (zeep فقط داخل `_client()` لازی import می‌شود)، پس
+  افزودنش به registry، import کاربران بدون [soap] را نمی‌شکند.
+  تغییر امضای verify (افزودن extra=None) زرین‌پال/زیبال را نشکست؛ کل سوییت سبز است.
 - pay_ir و idpay از کار افتاده‌اند (سرویس کلاً قطع است، نه معلق موقت). در registry
   عمومی نیستند. تست‌های رگرسیون موجود در test_gateways.py این را قفل کرده‌اند:
   `test_pay_ir_not_in_public_registry` و `test_pay_ir_still_importable_from_experimental`

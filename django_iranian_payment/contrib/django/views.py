@@ -38,13 +38,22 @@ def _extract_extra(request):
     """
     params = request.POST if request.method == "POST" else request.GET
     extra = {}
-    # ملت
+    # ملت — ResCode باید قبل از SaleReferenceId بررسی شود (کنسل شدن فاقد SaleReferenceId است)
+    res_code = params.get("ResCode")
+    if res_code:
+        extra["res_code"] = res_code
     sale_ref = params.get("SaleReferenceId") or params.get("saleReferenceId")
     sale_order = params.get("SaleOrderId") or params.get("saleOrderId")
     if sale_ref:
         extra["sale_reference_id"] = sale_ref
     if sale_order:
         extra["sale_order_id"] = sale_order
+    card_pan = params.get("CardHolderPan")
+    if card_pan:
+        extra["card_number"] = card_pan
+    final_amount = params.get("FinalAmount")
+    if final_amount:
+        extra["final_amount"] = final_amount
     # دیجی‌پی
     tracking_code = params.get("trackingCode") or params.get("tracking_code")
     if tracking_code:

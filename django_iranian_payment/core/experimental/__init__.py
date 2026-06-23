@@ -11,19 +11,18 @@ core/experimental/__init__.py — re-export درگاه‌های تجربی و م
 """
 
 # درگاه‌های تجربی: کد کامل از مستند رسمی، تست‌نشده با ترمینال/sandbox واقعی
-from .mellat import MellatGateway  # noqa: F401
+# نکته: mellat پس از تست تراکنش واقعی به core/gateways (registry عمومی) منتقل شد.
 from .saman import SamanGateway  # noqa: F401
 from .irankish import IrankishGateway  # noqa: F401
 from .nextpay import NextPayGateway  # noqa: F401
 from .sadad import SadadGateway  # noqa: F401
-from .digipay import DigipayGateway  # noqa: F401  ← خط جدید دیجی‌پی
+from .digipay import DigipayGateway  # noqa: F401
 
 # درگاه‌های از کار افتاده (سرویس دیگر فعال نیست؛ کد به‌عنوان آرشیو)
 from .pay_ir import PayIrGateway  # noqa: F401
 from .idpay import IDPayGateway  # noqa: F401
 
 __all__ = [
-    "MellatGateway",
     "SamanGateway",
     "IrankishGateway",
     "NextPayGateway",
