@@ -15,10 +15,12 @@ from .exceptions import (
 from .fee import FeeConfig, FeePayer, FeeResult, apply_fee
 from .gateways import available_slugs, get_gateway_class
 from .models import (
+    Currency,
     InitiateResult,
     PaymentRequest,
     PaymentResult,
     PaymentStatus,
+    to_rial,
 )
 
 __all__ = [
@@ -36,6 +38,8 @@ __all__ = [
     "PaymentResult",
     "InitiateResult",
     "PaymentStatus",
+    "Currency",
+    "to_rial",
     "GatewayError",
     "GatewayConfigurationError",
     "GatewayConnectionError",

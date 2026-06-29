@@ -22,7 +22,8 @@
     ]
 
     IRANIAN_PAYMENT = {
-        "sandbox": True,
+        "currency": "rial",   # واحد ورودی مبلغ: "rial" (پیش‌فرض) یا "toman"
+        "sandbox": False,   # پیش‌فرض سراسری
         "gateways": {
             "sadad": {
                 "merchant_id": "1234",          # شناسه پذیرنده از سداد
@@ -30,9 +31,13 @@
                 "terminal_key": "BASE64_KEY==", # کلید پذیرنده به‌صورت Base64
                 # کلید را از پورتال سداد (https://sadad.shaparak.ir) بگیر.
                 # بعد از دیکد باید ۱۶ یا ۲۴ بایت باشد (3DES).
+                # ⚠️ ویژه‌ی سداد: URL سندباکس جدا ندارد؛ فلگ "sandbox" بی‌اثر است.
             },
         },
     }
+
+    # sandbox مجزای هر درگاه: کلید "sandbox" داخل config درگاه بر مقدار سراسری
+    # اولویت دارد — برای درگاه‌هایی که URL سندباکس جدا دارند. سداد مستثناست.
 
 ━━ قدم ۳: ثبت درگاه در registry ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -121,6 +126,98 @@ def payment_result(request):
         return HttpResponse(f"پرداخت ناموفق. {err}")
 
     return HttpResponse("وضعیت نامشخص.", status=400)
+
+
+# ═════════════════════════════════════════════════════════════
+#  سداد — دو حالت مدیریت دیتابیس
+# ═════════════════════════════════════════════════════════════
+#
+# حالت ۱ (پکیج DB را مدیریت می‌کند): همان checkout/payment_result بالا.
+#
+# حالت ۲ (خودت DB را مدیریت می‌کنی): کد زیر. مشخصات سداد در این حالت:
+#   • هدایت: GET ساده به Purchase?Token=<token>.
+#   • callback: POST — سداد Token و ResCode و OrderId را برمی‌گرداند.
+#   • رکوردت را با authority(==Token) پیدا کن (OrderId هم برمی‌گردد).
+#   • verify خودش با Token کار می‌کند؛ extra اختیاری است: اگر ResCode را بدهی و
+#     ناموفق باشد، بدون تماس با بانک نتیجه‌ی ناموفق می‌گیری.
+#   • ⚠️ verify باید ظرف ۱۵ دقیقه زده شود وگرنه مبلغ برمی‌گردد.
+#   • amount در verify باید amount_sent ذخیره‌شده باشد، نه مبلغ پایه.
+# مدل نمونه‌ی MyPayment و توضیح کامل در scripts/django_custom_db.py است.
+
+from django_iranian_payment import get_gateway
+from django_iranian_payment.core.models import PaymentRequest
+
+
+def checkout_self_managed(request):
+    """حالت ۲ سداد — شروع پرداخت با مدل خودت (MyPayment)."""
+    from yourapp.models import MyPayment
+
+    order_id = "5001"  # سداد order_id عددی می‌خواهد
+    amount = 400_000  # ریال
+    callback_url = request.build_absolute_uri(
+        reverse("mypay-callback", kwargs={"slug": "sadad"})
+    )
+
+    record = MyPayment.objects.create(
+        gateway_slug="sadad",
+        order_id=order_id,
+        amount=amount,
+        callback_url=callback_url,
+        status="waiting",
+    )
+
+    gw = get_gateway("sadad")
+    try:
+        result = gw.initiate(
+            PaymentRequest(amount=amount, callback_url=callback_url, order_id=order_id)
+        )
+    except GatewayError as e:
+        record.status = "failed"
+        record.error_message = str(e)
+        record.save()
+        return HttpResponse(f"خطا در اتصال به سداد: {e}", status=502)
+
+    record.authority = result.authority  # Token
+    record.amount_sent = result.amount_to_send
+    record.status = "redirect"
+    record.save()
+    return HttpResponseRedirect(result.redirect_url)
+
+
+def callback_self_managed(request):
+    """حالت ۲ سداد — verify با Token از POST و به‌روزرسانی مدل خودت."""
+    from yourapp.models import MyPayment
+
+    p = request.POST
+    token = p.get("Token")
+    if not token:
+        return HttpResponse("Token در callback نبود.", status=400)
+
+    record = MyPayment.objects.filter(gateway_slug="sadad", authority=token).first()
+    if record is None:
+        return HttpResponse("رکورد یافت نشد.", status=404)
+    if record.status == "complete":
+        return HttpResponse("قبلاً تأیید شده.")
+
+    gw = get_gateway("sadad")
+    extra = {"res_code": p.get("ResCode")} if p.get("ResCode") else None
+    result = gw.verify(
+        authority=token,
+        amount=record.amount_sent,  # ← نه record.amount
+        order_id=record.order_id,
+        extra=extra,
+    )
+
+    if result.is_success:
+        record.status = "complete"
+        record.reference_id = result.reference_id or ""  # RetrivalRefNo
+        record.card_number = result.card_number or ""
+        record.save()
+        return HttpResponse(f"پرداخت سداد موفق! کد پیگیری: {record.reference_id}")
+    record.status = "failed"
+    record.error_message = result.error_message or ""
+    record.save()
+    return HttpResponse(f"پرداخت ناموفق: {record.error_message}")
 
 
 if __name__ == "__main__":

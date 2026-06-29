@@ -22,16 +22,21 @@ AES+RSA برای ساخت authenticationEnvelope استفاده می‌کند.
     ]
 
     IRANIAN_PAYMENT = {
-        "sandbox": True,
+        "currency": "rial",   # واحد ورودی مبلغ: "rial" (پیش‌فرض) یا "toman"
+        "sandbox": False,   # پیش‌فرض سراسری
         "gateways": {
             "irankish": {
                 "terminal_id": "xxxxxxxx",       # hex — از ایران‌کیش
                 "acceptor_id": "xxxxxxxx",       # hex — از ایران‌کیش
                 "pass_phrase": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",  # hex ۳۲+ کاراکتر
                 "public_key": "/path/to/irankish_public.pem",  # مسیر کلید RSA بانک
+                # ⚠️ ویژه‌ی ایران‌کیش: URL سندباکس جدا ندارد؛ فلگ "sandbox" بی‌اثر است.
             },
         },
     }
+
+    # sandbox مجزای هر درگاه: کلید "sandbox" داخل config درگاه بر مقدار سراسری
+    # اولویت دارد — برای درگاه‌هایی که URL سندباکس جدا دارند. ایران‌کیش مستثناست.
 
 ━━ قدم ۳: دریافت کلید عمومی RSA ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -123,6 +128,101 @@ def payment_result(request):
         return HttpResponse("پرداخت ناموفق. لطفاً دوباره تلاش کنید.")
 
     return HttpResponse("وضعیت نامشخص.", status=400)
+
+
+# ═════════════════════════════════════════════════════════════
+#  ایران‌کیش — دو حالت مدیریت دیتابیس
+# ═════════════════════════════════════════════════════════════
+#
+# حالت ۱ (پکیج DB را مدیریت می‌کند): همان checkout/payment_result بالا.
+#
+# حالت ۲ (خودت DB را مدیریت می‌کنی): کد زیر. مشخصات ایران‌کیش در این حالت:
+#   • هدایت: redirect_url آماده (GET). مستند بانک فرم POST با فیلد tokenIdentity
+#     توصیه می‌کند؛ اگر بانک به GET ساده ایراد گرفت، مثل ملت فرم POST بساز.
+#   • callback: POST — ایران‌کیش resultCode, token, referenceId می‌فرستد.
+#   • رکوردت را با authority(==token) پیدا کن.
+#   • verify به هر دو token و referenceId نیاز دارد:
+#     extra={"reference_id": referenceId, "token": token, "result_code": resultCode}.
+#   • amount در verify باید amount_sent ذخیره‌شده باشد، نه مبلغ پایه.
+# مدل نمونه‌ی MyPayment و توضیح کامل در scripts/django_custom_db.py است.
+
+from django_iranian_payment import get_gateway
+from django_iranian_payment.core.models import PaymentRequest
+
+
+def checkout_self_managed(request):
+    """حالت ۲ ایران‌کیش — شروع پرداخت با مدل خودت (MyPayment)."""
+    from yourapp.models import MyPayment
+
+    order_id = "IK-ORDER-001"
+    amount = 250_000  # ریال
+    callback_url = request.build_absolute_uri(
+        reverse("mypay-callback", kwargs={"slug": "irankish"})
+    )
+
+    record = MyPayment.objects.create(
+        gateway_slug="irankish",
+        order_id=order_id,
+        amount=amount,
+        callback_url=callback_url,
+        status="waiting",
+    )
+
+    gw = get_gateway("irankish")
+    try:
+        result = gw.initiate(
+            PaymentRequest(amount=amount, callback_url=callback_url, order_id=order_id)
+        )
+    except GatewayError as e:
+        record.status = "failed"
+        record.error_message = str(e)
+        record.save()
+        return HttpResponse(f"خطا در اتصال به ایران‌کیش: {e}", status=502)
+
+    record.authority = result.authority  # token
+    record.amount_sent = result.amount_to_send
+    record.status = "redirect"
+    record.save()
+    return HttpResponseRedirect(result.redirect_url)
+
+
+def callback_self_managed(request):
+    """حالت ۲ ایران‌کیش — verify با token و referenceId از POST."""
+    from yourapp.models import MyPayment
+
+    p = request.POST
+    token = p.get("token")
+    if not token:
+        return HttpResponse("token در callback نبود.", status=400)
+
+    record = MyPayment.objects.filter(gateway_slug="irankish", authority=token).first()
+    if record is None:
+        return HttpResponse("رکورد یافت نشد.", status=404)
+    if record.status == "complete":
+        return HttpResponse("قبلاً تأیید شده.")
+
+    gw = get_gateway("irankish")
+    result = gw.verify(
+        authority=token,
+        amount=record.amount_sent,  # ← نه record.amount
+        order_id=record.order_id,
+        extra={
+            "reference_id": p.get("referenceId"),
+            "token": token,
+            "result_code": p.get("resultCode"),
+        },
+    )
+
+    if result.is_success:
+        record.status = "complete"
+        record.reference_id = result.reference_id or ""
+        record.card_number = result.card_number or ""
+        record.save()
+        return HttpResponse(f"پرداخت موفق! کد پیگیری: {record.reference_id}")
+    record.status = "failed"
+    record.error_message = result.error_message or ""
+    record.save()
+    return HttpResponse(f"پرداخت ناموفق: {record.error_message}")
 
 
 if __name__ == "__main__":

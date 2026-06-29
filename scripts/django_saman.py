@@ -21,15 +21,22 @@
     ]
 
     IRANIAN_PAYMENT = {
-        "sandbox": True,
+        "currency": "rial",   # واحد ورودی مبلغ: "rial" (پیش‌فرض) یا "toman"
+        "sandbox": False,   # پیش‌فرض سراسری
         "gateways": {
             "saman": {
                 "terminal_id": "123456789",  # شماره ترمینال از پرداخت الکترونیک سامان
                 # اختیاری: "redirect_url" برای neo-pg (X-IPG-Url header)
                 # "redirect_url": "https://sep.shaparak.ir/OnlinePG/SendToken",
+                # ⚠️ ویژه‌ی سامان: URL سندباکس جدا ندارد؛ فلگ "sandbox" برای سامان
+                # بی‌اثر است. تست با ترمینال واقعی روی همان آدرس عملیاتی انجام می‌شود.
             },
         },
     }
+
+    # sandbox مجزای هر درگاه: برای درگاه‌هایی که URL سندباکس جدا دارند
+    # (زرین‌پال/ملت/دیجی‌پی) کلید "sandbox" داخل config درگاه بر مقدار سراسری
+    # اولویت دارد. سامان از این قاعده مستثناست (بالا را ببین).
 
 ━━ قدم ۳: ثبت درگاه سامان در registry ━━━━━━━━━━━━━━━━━━━━━
 
@@ -137,6 +144,98 @@ def payment_result(request):
 #       gw = get_gateway("saman")
 #       result = gw.reverse(ref_num=ref_num)
 #       return result.is_success
+
+
+# ═════════════════════════════════════════════════════════════
+#  سامان — دو حالت مدیریت دیتابیس
+# ═════════════════════════════════════════════════════════════
+#
+# حالت ۱ (پکیج DB را مدیریت می‌کند): همان checkout/payment_result بالا.
+#
+# حالت ۲ (خودت DB را مدیریت می‌کنی): کد زیر. مشخصات سامان در این حالت:
+#   • هدایت: GET ساده به redirect_url (مستند POST توصیه می‌کند ولی پیاده‌سازی GET).
+#   • callback: POST — سامان State, Status, RefNum, ResNum, RRN می‌فرستد.
+#   • ⚠️ مهم: callback توکن (authority) را برنمی‌گرداند! رکوردت را با
+#     order_id(==ResNum که خودت فرستادی) پیدا کن، نه با authority.
+#   • verify به Token نیاز ندارد بلکه به RefNum؛ extra={"ref_num": RefNum,
+#     "state": State} بده. یکتایی RefNum مسئولیت توست (سامان یک RefNum را بارها
+#     verify می‌کند) — پس idempotency (چک status=="complete") حیاتی است.
+#   • amount در verify باید amount_sent ذخیره‌شده باشد، نه مبلغ پایه.
+# مدل نمونه‌ی MyPayment و توضیح کامل در scripts/django_custom_db.py است.
+
+from django_iranian_payment import get_gateway
+from django_iranian_payment.core.models import PaymentRequest
+
+
+def checkout_self_managed(request):
+    """حالت ۲ سامان — شروع پرداخت با مدل خودت (MyPayment)."""
+    from yourapp.models import MyPayment
+
+    order_id = "SAMAN-ORDER-001"  # همین به‌عنوان ResNum می‌رود و در callback برمی‌گردد
+    amount = 300_000  # ریال
+    callback_url = request.build_absolute_uri(
+        reverse("mypay-callback", kwargs={"slug": "saman"})
+    )
+
+    record = MyPayment.objects.create(
+        gateway_slug="saman",
+        order_id=order_id,
+        amount=amount,
+        callback_url=callback_url,
+        status="waiting",
+    )
+
+    gw = get_gateway("saman")
+    try:
+        result = gw.initiate(
+            PaymentRequest(amount=amount, callback_url=callback_url, order_id=order_id)
+        )
+    except GatewayError as e:
+        record.status = "failed"
+        record.error_message = str(e)
+        record.save()
+        return HttpResponse(f"خطا در اتصال به سامان: {e}", status=502)
+
+    record.authority = result.authority  # Token (در callback برنمی‌گردد، ولی نگه‌دار)
+    record.amount_sent = result.amount_to_send
+    record.status = "redirect"
+    record.save()
+    return HttpResponseRedirect(result.redirect_url)
+
+
+def callback_self_managed(request):
+    """حالت ۲ سامان — پیدا کردن رکورد با ResNum، verify با RefNum از POST."""
+    from yourapp.models import MyPayment
+
+    p = request.POST
+    res_num = p.get("ResNum")  # == order_id ما
+    if not res_num:
+        return HttpResponse("ResNum در callback نبود.", status=400)
+
+    record = MyPayment.objects.filter(gateway_slug="saman", order_id=res_num).first()
+    if record is None:
+        return HttpResponse("رکورد یافت نشد.", status=404)
+    if record.status == "complete":  # idempotency حیاتی برای سامان
+        return HttpResponse("قبلاً تأیید شده.")
+
+    gw = get_gateway("saman")
+    result = gw.verify(
+        authority=record.authority,
+        amount=record.amount_sent,  # ← نه record.amount
+        order_id=record.order_id,
+        extra={"ref_num": p.get("RefNum"), "state": p.get("State")},
+    )
+
+    if result.is_success:
+        record.status = "complete"
+        record.reference_id = result.reference_id or ""  # RRN
+        record.card_number = result.card_number or ""
+        record.save()
+        return HttpResponse(f"پرداخت موفق! RefNum/RRN: {record.reference_id}")
+    record.status = "failed"
+    record.error_message = result.error_message or ""
+    record.save()
+    return HttpResponse(f"پرداخت ناموفق: {record.error_message}")
 
 
 if __name__ == "__main__":

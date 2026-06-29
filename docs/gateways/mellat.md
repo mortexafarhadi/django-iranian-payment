@@ -1,0 +1,415 @@
+# راهنمای اتصال درگاه ملت / به‌پرداخت (Mellat / BehPardakht)
+
+ملت درگاه پرداخت بانک ملت است و از پروتکل **SOAP** (zeep) استفاده می‌کند. در
+**registry عمومی** پکیج قرار دارد و **با تراکنش live واقعی روی محیط عملیاتی
+(bpm.shaparak.ir) تأیید شده** است.
+
+- **وضعیت:** registry عمومی — ✅ تراکنش live تست‌شده (موفق + سناریوی کنسل کاربر).
+- **هدایت کاربر:** ⚠️ **فرم POST** (نه redirect ساده). باید فرم HTML auto-submit
+  به کاربر داده شود.
+- **callback:** POST با فیلدهای `RefId`، `ResCode`، `SaleOrderId`، `SaleReferenceId`
+  و گاهی `CardHolderPan`/`FinalAmount`.
+- **وابستگی اختیاری:** `[soap]` (zeep) — برای فراخوانی SOAP لازم است.
+- **پیش‌نیاز عملیاتی:** قرارداد پذیرندگی + ثبت IP سرور نزد ملت + دسترسی شبکه به
+  bpm.shaparak.ir.
+- **مبلغ:** ریال. `order_id` باید عددی و یکتا باشد.
+
+این راهنما دو حالت دارد و هر حالت کامل و مستقل است:
+- [حالت ۱: پکیج دیتابیس را مدیریت می‌کند](#حالت-۱)
+- [حالت ۲: خودت دیتابیس را مدیریت می‌کنی](#حالت-۲)
+
+> **دومرحله‌ای بودن ملت:** پیش‌فرض `settle_mode="verify_settle"` است که تأیید و واریز
+> را اتمیک انجام می‌دهد (توصیه‌شده). اگر `settle_mode="verify_only"` بگذاری، بعد از
+> verify موفق باید خودت `settle()` را صدا بزنی وگرنه بانک در ۳ ساعت
+> Autoreversal می‌زند (پول برمی‌گردد). متدهای کمکی: `settle()`، `reverse()`،
+> `inquiry()`.
+
+---
+
+## نصب
+
+```bash
+pip install "django-iranian-payment[soap]"
+# zeep برای ارتباط SOAP نیاز است.
+```
+
+---
+
+<a id="حالت-۱"></a>
+## حالت ۱: پکیج دیتابیس را مدیریت می‌کند
+
+در این حالت پکیج خودکار فرم POST را می‌سازد و `SaleReferenceId`/`SaleOrderId` را از
+callback می‌خواند و به verify می‌دهد.
+
+### قدم ۱: settings.py
+
+```python
+INSTALLED_APPS = [
+    # ...
+    "django_iranian_payment.contrib.django",
+]
+
+# برای ساخت فرم POST، APP_DIRS باید True باشد تا template پکیج پیدا شود:
+TEMPLATES = [
+    {
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [],
+        "APP_DIRS": True,   # ← لازم
+        "OPTIONS": {"context_processors": []},
+    }
+]
+
+IRANIAN_PAYMENT = {
+    "currency": "rial",  # واحد ورودی مبلغ: "rial" (پیش‌فرض) یا "toman"
+    "sandbox": False,
+    "gateways": {
+        "mellat": {
+            "terminal_id": "1234567",        # شماره ترمینال از ملت
+            "username": "your-username",     # نام کاربری از ملت
+            "password": "your-password",     # رمز از ملت
+            "settle_mode": "verify_settle",  # توصیه: تأیید+واریز اتمیک
+            # یا "verify_only" (نیاز به settle() جداگانه بعداً)
+            "sandbox": True,   # ← sandbox مجزای ملت (pgw.dev.bpmellat.ir)
+            # False = محیط عملیاتی (bpm.shaparak.ir).
+            # ⚠️ در عمل sandbox ملت پاسخ‌گو نبود؛ تست واقعی روی live انجام شد.
+        },
+    },
+}
+```
+
+### قدم ۲: اجرای migration
+
+```bash
+python manage.py migrate
+```
+
+### قدم ۳: mount کردن url های پکیج
+
+```python
+# project/urls.py
+from django.urls import path, include
+
+urlpatterns = [
+    # ...
+    path("payment/", include("django_iranian_payment.contrib.django.urls")),
+]
+```
+
+مسیرها:
+
+```
+GET  /payment/go/<payment_id>/        → صفحه‌ی فرم POST auto-submit به ملت
+POST /payment/callback/mellat/        → برگشت از بانک (POST)
+```
+
+### قدم ۴: ثبت callBackUrl در ملت
+
+آدرس زیر را نزد ملت ثبت کن:
+
+```
+https://yoursite.com/payment/callback/mellat/
+```
+
+### قدم ۵: view های خودت
+
+```python
+# yourapp/views.py
+from django.http import HttpResponse, HttpResponseRedirect
+from django.urls import reverse
+
+from django_iranian_payment.contrib.django.services import start_payment
+from django_iranian_payment.contrib.django.models import Payment, PaymentStatus
+from django_iranian_payment.core.exceptions import GatewayError
+
+
+def checkout(request):
+    order_id = "1001"   # ملت orderId عددی و یکتا می‌خواهد
+    amount = 500_000    # ریال
+    callback_url = request.build_absolute_uri(
+        reverse("iranian_payment:callback", kwargs={"slug": "mellat"})
+    )
+
+    try:
+        payment, _ = start_payment(
+            slug="mellat",
+            amount=amount,
+            callback_url=callback_url,
+            order_id=order_id,
+            description="خرید از فروشگاه",
+        )
+    except GatewayError as e:
+        return HttpResponse(f"خطا در اتصال به ملت: {e}", status=502)
+
+    # ⚠️ ملت redirect ساده ندارد. کاربر را به go_to_gateway بفرست؛ پکیج فرم POST
+    # auto-submit را می‌سازد.
+    return HttpResponseRedirect(
+        reverse("iranian_payment:go-to-gateway", kwargs={"payment_id": payment.id})
+    )
+
+
+def payment_result(request):
+    status = request.GET.get("payment_status")
+    order_id = request.GET.get("order_id", "")
+    if status == "success":
+        payment = Payment.objects.filter(
+            order_id=order_id, status=PaymentStatus.COMPLETE
+        ).first()
+        if payment:
+            return HttpResponse(f"پرداخت موفق! SaleReferenceId: {payment.reference_id}")
+    elif status == "failed":
+        payment = Payment.objects.filter(order_id=order_id).first()
+        err = payment.error_message if payment else ""
+        return HttpResponse(f"پرداخت ناموفق. {err}")
+    return HttpResponse("نتیجه نامشخص.", status=400)
+```
+
+### قدم ۶: url های app خودت
+
+```python
+# yourapp/urls.py
+from django.urls import path
+from . import views
+
+urlpatterns = [
+    path("checkout/", views.checkout, name="checkout"),
+    path("payment/result/", views.payment_result, name="payment-result"),
+]
+```
+
+### settle برای حالت verify_only (اختیاری)
+
+اگر `settle_mode="verify_only"` گذاشتی، بعد از verify موفق در یک task/celery:
+
+```python
+from django_iranian_payment import get_gateway
+
+def settle_mellat(order_id, sale_order_id, sale_reference_id):
+    gw = get_gateway("mellat")
+    result = gw.settle(
+        order_id=order_id,
+        sale_order_id=sale_order_id,
+        sale_reference_id=sale_reference_id,
+    )
+    return result.is_success
+```
+
+`sale_order_id`/`sale_reference_id` در `payment.raw` ذخیره شده‌اند (پکیج بعد از
+verify آن‌ها را در raw می‌گذارد).
+
+### جریان کامل حالت ۱
+
+1. `checkout` → `start_payment` (SOAP bpPayRequest) → رکورد با `authority`(=`RefId`)
+   ذخیره می‌شود → کاربر به `/payment/go/<id>/`.
+2. view `go_to_gateway` فرم POST auto-submit با فیلد `RefId` به صفحه‌ی ملت می‌سازد.
+3. کاربر پرداخت می‌کند → ملت با **POST** به `/payment/callback/mellat/` برمی‌گردد
+   (RefId, ResCode, SaleOrderId, SaleReferenceId, ...).
+4. view callback پکیج رکورد را با `RefId` پیدا می‌کند، `ResCode` را چک می‌کند (اگر
+   کاربر کنسل کرده باشد `ResCode=17`، بدون تماس SOAP ناموفق برمی‌گرداند)، و در غیر
+   این صورت bpVerifySettleRequest می‌زند.
+
+---
+
+<a id="حالت-۲"></a>
+## حالت ۲: خودت دیتابیس را مدیریت می‌کنی
+
+ملت در این حالت سخت‌ترین است چون هدایت با **فرم POST** است و در حالت ۲ template
+پکیج در دسترس نیست (اپ در `INSTALLED_APPS` نیست) — پس فرم را خودت می‌سازی.
+
+### قدم ۱: settings.py (بدون افزودن اپ پکیج)
+
+```python
+IRANIAN_PAYMENT = {
+    "currency": "rial",  # واحد ورودی مبلغ: "rial" (پیش‌فرض) یا "toman"
+    "sandbox": False,
+    "gateways": {
+        "mellat": {
+            "terminal_id": "1234567",
+            "username": "your-username",
+            "password": "your-password",
+            "settle_mode": "verify_settle",
+            "sandbox": True,   # sandbox مجزای ملت
+        },
+    },
+}
+```
+
+### قدم ۲: مدل خودت
+
+```python
+# yourapp/models.py
+from django.db import models
+
+
+class MyPayment(models.Model):
+    gateway_slug    = models.CharField(max_length=32, db_index=True)
+    order_id        = models.CharField(max_length=128, db_index=True)
+    amount          = models.BigIntegerField()
+    amount_sent     = models.BigIntegerField(default=0)
+    authority       = models.CharField(max_length=255, blank=True, db_index=True)  # RefId
+    redirect_url    = models.URLField(max_length=1000, blank=True)
+    redirect_fields = models.JSONField(default=dict, blank=True)   # {"RefId": ...}
+    status          = models.CharField(max_length=16, default="waiting", db_index=True)
+    reference_id    = models.CharField(max_length=255, blank=True)
+    card_number     = models.CharField(max_length=32, blank=True)
+    error_message   = models.TextField(blank=True)
+    callback_url    = models.URLField(max_length=500)
+    raw             = models.JSONField(default=dict, blank=True)   # sale_*_id برای settle
+    created_at      = models.DateTimeField(auto_now_add=True)
+```
+
+### قدم ۳: url های خودت
+
+```python
+# yourapp/urls.py
+from django.urls import path
+from . import views
+
+urlpatterns = [
+    path("pay/mellat/",          views.checkout, name="ml-checkout"),
+    path("pay/callback/mellat/", views.callback, name="ml-callback"),
+]
+```
+
+> `callBackUrl` ملت را به همین `ml-callback` (آدرس کامل) ثبت کن.
+
+### قدم ۴: view شروع پرداخت + ساخت فرم POST به دست خودت
+
+```python
+# yourapp/views.py
+from django.http import HttpResponse
+from django.urls import reverse
+from django.utils.html import escape
+
+from django_iranian_payment import get_gateway
+from django_iranian_payment.core.models import PaymentRequest
+from django_iranian_payment.core.exceptions import GatewayError
+from .models import MyPayment
+
+
+def checkout(request):
+    order_id = "1001"   # عددی و یکتا
+    amount = 500_000    # ریال
+    callback_url = request.build_absolute_uri(reverse("ml-callback"))
+
+    record = MyPayment.objects.create(
+        gateway_slug="mellat",
+        order_id=order_id,
+        amount=amount,
+        callback_url=callback_url,
+        status="waiting",
+    )
+
+    gw = get_gateway("mellat")
+    try:
+        result = gw.initiate(
+            PaymentRequest(amount=amount, callback_url=callback_url, order_id=order_id)
+        )
+    except GatewayError as e:
+        record.status = "failed"
+        record.error_message = str(e)
+        record.save()
+        return HttpResponse(f"خطا در اتصال به ملت: {e}", status=502)
+
+    record.authority = result.authority           # RefId
+    record.amount_sent = result.amount_to_send     # مرجع یکتا برای verify
+    record.redirect_url = result.redirect_url
+    record.redirect_fields = result.redirect_fields  # {"RefId": ...}
+    record.status = "redirect"
+    record.save()
+
+    # ملت POST می‌خواهد → فرم auto-submit بساز (در حالت ۲ template پکیج نیست).
+    inputs = "".join(
+        f'<input type="hidden" name="{escape(k)}" value="{escape(str(v))}">'
+        for k, v in (result.redirect_fields or {}).items()
+    )
+    html = (
+        "<!doctype html><html><head><meta charset='utf-8'></head>"
+        "<body onload='document.forms[0].submit()'>در حال انتقال به بانک ملت…"
+        f"<form method='post' action='{escape(result.redirect_url)}'>{inputs}"
+        "<noscript><button type='submit'>ادامه</button></noscript>"
+        "</form></body></html>"
+    )
+    return HttpResponse(html)
+```
+
+### قدم ۵: view بازگشت (POST)، استخراج extra و verify
+
+```python
+def callback(request):
+    p = request.POST   # ملت با POST برمی‌گردد
+    sale_order_id = p.get("SaleOrderId")
+    ref_id = p.get("RefId")
+    if not ref_id:
+        return HttpResponse("RefId در callback نبود.", status=400)
+
+    # ملت را با authority(==RefId) پیدا کن (یکتا per-transaction).
+    record = MyPayment.objects.filter(gateway_slug="mellat", authority=ref_id).first()
+    if record is None:
+        return HttpResponse("رکورد یافت نشد.", status=404)
+    if record.status == "complete":
+        return HttpResponse("قبلاً تأیید شده.")
+
+    # extra لازم ملت برای verify:
+    extra = {
+        "res_code": p.get("ResCode"),
+        "sale_reference_id": p.get("SaleReferenceId"),
+        "sale_order_id": sale_order_id,
+        "card_number": p.get("CardHolderPan"),
+        "final_amount": p.get("FinalAmount"),
+    }
+
+    gw = get_gateway("mellat")
+    result = gw.verify(
+        authority=ref_id,
+        amount=record.amount_sent,   # ⚠️ نه record.amount
+        order_id=record.order_id,
+        extra={k: v for k, v in extra.items() if v},
+    )
+
+    if result.is_success:
+        record.status = "complete"
+        record.reference_id = result.reference_id or ""
+        record.card_number = result.card_number or ""
+        record.raw = result.raw or {}   # شامل sale_*_id برای settle/reverse بعدی
+        record.save()
+        return HttpResponse(f"پرداخت موفق! SaleReferenceId: {record.reference_id}")
+
+    record.status = "failed"
+    record.error_message = result.error_message or ""
+    record.save()
+    return HttpResponse(f"پرداخت ناموفق: {record.error_message}")
+```
+
+### settle / reverse در حالت verify_only (حالت ۲)
+
+```python
+gw = get_gateway("mellat")
+raw = record.raw  # شامل sale_order_id و sale_reference_id
+
+# واریز با تأخیر:
+gw.settle(order_id=record.order_id,
+          sale_order_id=raw["sale_order_id"],
+          sale_reference_id=raw["sale_reference_id"])
+
+# برگشت وجه:
+gw.reverse(order_id=record.order_id,
+           sale_order_id=raw["sale_order_id"],
+           sale_reference_id=raw["sale_reference_id"])
+```
+
+### نکات اختصاصی ملت در حالت ۲
+
+- **هدایت:** فرم POST auto-submit (نمونه‌ی بالا). redirect ساده کار نمی‌کند.
+- **پیدا کردن رکورد:** با `authority`(==`RefId`) که در callback برمی‌گردد و یکتاست.
+- **`extra`:** ضروری — `sale_reference_id` نباشد verify خطا می‌دهد. کنسل کاربر
+  (`ResCode=17`) فاقد `SaleReferenceId` است؛ پکیج این را تشخیص می‌دهد و بدون تماس
+  SOAP نتیجه‌ی ناموفق برمی‌گرداند.
+- **settle:** اگر `verify_only` باشی، حتماً `settle()` را بزن وگرنه Autoreversal.
+
+---
+
+## کد آماده‌ی اجرا
+
+- [`scripts/django_mellat.py`](../../scripts/django_mellat.py) — کد هر دو حالت.
+- [`scripts/test_mellat.py`](../../scripts/test_mellat.py) — تست core (نیاز به IP
+  ثبت‌شده نزد بانک).

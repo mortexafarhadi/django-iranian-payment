@@ -21,15 +21,25 @@
     ]
 
     IRANIAN_PAYMENT = {
-        "sandbox": True,   # False در محیط production
+        "currency": "rial",   # واحد ورودی مبلغ: "rial" (پیش‌فرض) یا "toman"
+        # sandbox سراسری: پیش‌فرض برای درگاه‌هایی که خودشان مشخص نکرده‌اند.
+        "sandbox": False,
         "gateways": {
             "zarinpal": {
                 "merchant_id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
                 # merchant_id را از پنل زرین‌پال (https://www.zarinpal.com) بگیر.
                 # برای sandbox می‌توانی هر UUID ۳۶ کاراکتری بدهی.
+                "sandbox": True,   # ← sandbox مجزای همین درگاه
+                # زرین‌پال sandbox واقعی دارد (sandbox.zarinpal.com). با True اینجا،
+                # این درگاه روی sandbox می‌رود حتی اگر sandbox سراسری False باشد.
+                # این یعنی می‌توانی زرین‌پال را تست کنی و هم‌زمان درگاه دیگری live باشد.
             },
         },
     }
+
+    # sandbox مجزای هر درگاه: کلید "sandbox" داخل config همان درگاه بر مقدار
+    # سراسری اولویت دارد. اولویت کامل: آرگومان get_gateway(..., sandbox=...) >
+    # config درگاه > sandbox سراسری > False.
 
 ━━ قدم ۳: اجرای migration ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -183,25 +193,96 @@ def payment_result(request):
     return HttpResponse("نتیجه‌ی پرداخت نامشخص.", status=400)
 
 
-# ─────────────────────────────────────────────────────────────
-#  استفاده مستقیم از core (بدون لایه‌ی Django) — اختیاری
-# ─────────────────────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════
+#  زرین‌پال — دو حالت مدیریت دیتابیس
+# ═════════════════════════════════════════════════════════════
 #
-# اگر نمی‌خواهی از مدل Payment و سرویس‌های لایه‌ی contrib استفاده کنی،
-# می‌توانی مستقیم با هسته کار کنی:
+# حالت ۱ (پکیج DB را مدیریت می‌کند): همان checkout/payment_result بالا.
+#   • از services.start_payment / verify_payment و مدل Payment پکیج استفاده می‌کنی.
+#   • اپ "django_iranian_payment.contrib.django" را به INSTALLED_APPS اضافه و
+#     migrate می‌کنی. url داخلی /payment/callback/zarinpal/ کار verify را می‌کند.
 #
-#   from django_iranian_payment import get_gateway
-#   from django_iranian_payment.core.models import PaymentRequest
-#
-#   gw = get_gateway("zarinpal")
-#   result = gw.initiate(PaymentRequest(amount=150_000, callback_url="...", order_id="1"))
-#   # result.redirect_url را ذخیره کن و کاربر را به آن هدایت کن
-#
-#   # در callback:
-#   authority = request.GET.get("Authority")
-#   verify_result = gw.verify(authority=authority, amount=150_000, order_id="1")
-#   if verify_result.is_success:
-#       ...
+# حالت ۲ (خودت DB را مدیریت می‌کنی): کد زیر. مشخصات زرین‌پال در این حالت:
+#   • هدایت: GET ساده (redirect به result.redirect_url). فرم POST لازم نیست.
+#   • callback: GET — زرین‌پال ?Authority=...&Status=OK می‌فرستد.
+#   • رکوردت را با authority پیدا کن (زرین‌پال order_id را در callback echo نمی‌کند).
+#   • verify هیچ extra لازم ندارد (Status را خودت چک کن: "OK" یعنی کاربر پرداخت کرد).
+#   • amount در verify باید amount_sent ذخیره‌شده باشد، نه مبلغ پایه.
+# مدل نمونه‌ی MyPayment و توضیح کامل در scripts/django_custom_db.py است.
+
+from django_iranian_payment import get_gateway
+from django_iranian_payment.core.models import PaymentRequest
+
+
+def checkout_self_managed(request):
+    """حالت ۲ زرین‌پال — شروع پرداخت با مدل خودت (MyPayment)."""
+    from yourapp.models import MyPayment  # مدل خودت (نه پکیج)
+
+    order_id = "ORDER-2001"
+    amount = 150_000  # ریال
+    callback_url = request.build_absolute_uri(
+        reverse("mypay-callback", kwargs={"slug": "zarinpal"})
+    )
+
+    record = MyPayment.objects.create(
+        gateway_slug="zarinpal",
+        order_id=order_id,
+        amount=amount,
+        callback_url=callback_url,
+        status="waiting",
+    )
+
+    gw = get_gateway("zarinpal")  # sandbox از settings همین درگاه خوانده می‌شود
+    try:
+        result = gw.initiate(
+            PaymentRequest(amount=amount, callback_url=callback_url, order_id=order_id)
+        )
+    except GatewayError as e:
+        record.status = "failed"
+        record.error_message = str(e)
+        record.save()
+        return HttpResponse(f"خطا در اتصال به زرین‌پال: {e}", status=502)
+
+    record.authority = result.authority  # ← برای پیدا کردن رکورد در callback
+    record.amount_sent = result.amount_to_send  # ← مرجع یکتا برای verify
+    record.status = "redirect"
+    record.save()
+    return HttpResponseRedirect(result.redirect_url)
+
+
+def callback_self_managed(request):
+    """حالت ۲ زرین‌پال — verify و به‌روزرسانی مدل خودت."""
+    from yourapp.models import MyPayment
+
+    authority = request.GET.get("Authority")
+    if not authority:
+        return HttpResponse("Authority در callback نبود.", status=400)
+
+    record = MyPayment.objects.filter(
+        gateway_slug="zarinpal", authority=authority
+    ).first()
+    if record is None:
+        return HttpResponse("رکورد یافت نشد.", status=404)
+    if record.status == "complete":  # idempotent
+        return HttpResponse("قبلاً تأیید شده.")
+
+    gw = get_gateway("zarinpal")
+    result = gw.verify(
+        authority=authority,
+        amount=record.amount_sent,  # ← نه record.amount
+        order_id=record.order_id,
+    )
+
+    if result.is_success:
+        record.status = "complete"
+        record.reference_id = result.reference_id or ""
+        record.card_number = result.card_number or ""
+        record.save()
+        return HttpResponse(f"پرداخت موفق! کد پیگیری: {record.reference_id}")
+    record.status = "failed"
+    record.error_message = result.error_message or ""
+    record.save()
+    return HttpResponse(f"پرداخت ناموفق: {record.error_message}")
 
 
 if __name__ == "__main__":

@@ -16,64 +16,141 @@ from django.shortcuts import get_object_or_404, render
 from . import services
 from .models import Payment
 
+# ─────────────────────────────────────────────────────────────
+#  مشخصات callback هر درگاه — یک منبع واحد برای پیدا کردن رکورد و ساخت extra
+# ─────────────────────────────────────────────────────────────
+#
+# هر درگاه در callback، پارامترهای متفاوتی برمی‌گرداند. این spec سه چیز را
+# کدگذاری می‌کند:
+#   lookup = (field, [param_keys]):
+#       رکورد را با Payment.objects.filter(gateway_slug=slug, <field>=<param>) پیدا
+#       کن. field یکی از "authority" یا "order_id" است. اولین param موجود برداشته
+#       می‌شود. نکته‌ی مهم: callback سامان/دیجی‌پی توکن (authority) را برنمی‌گرداند،
+#       پس باید با order_id (که خودمان فرستادیم و بانک echo می‌کند) پیدا شوند.
+#   extra = {verify_key: [param_keys]}:
+#       مقادیری که verify آن درگاه از callback لازم دارد (مثل ملت که به
+#       sale_reference_id نیاز دارد). اولین param موجود برداشته می‌شود.
+#
+# ملت با RefId (authority، یکتا per-transaction) پیدا می‌شود تا رفتار تست‌شده‌ی
+# live آن دست‌نخورده بماند (RefId یکتاتر از SaleOrderId است که در retry تکرار می‌شود).
+_CALLBACK_SPEC = {
+    "zarinpal": {"lookup": ("authority", ["Authority", "authority"]), "extra": {}},
+    "zibal": {
+        "lookup": ("authority", ["trackId", "trackid", "track_id"]),
+        "extra": {},
+    },
+    "nextpay": {"lookup": ("authority", ["trans_id", "transId"]), "extra": {}},
+    "sadad": {
+        "lookup": ("authority", ["Token", "token"]),
+        "extra": {"res_code": ["ResCode"]},
+    },
+    "mellat": {
+        "lookup": ("authority", ["RefId", "refId"]),
+        "extra": {
+            "res_code": ["ResCode"],
+            "sale_reference_id": ["SaleReferenceId", "saleReferenceId"],
+            "sale_order_id": ["SaleOrderId", "saleOrderId"],
+            "card_number": ["CardHolderPan"],
+            "final_amount": ["FinalAmount"],
+        },
+    },
+    "saman": {
+        "lookup": ("order_id", ["ResNum", "resNum"]),
+        "extra": {"ref_num": ["RefNum", "refNum"], "state": ["State"]},
+    },
+    "irankish": {
+        "lookup": ("authority", ["token"]),
+        "extra": {
+            "reference_id": ["referenceId"],
+            "token": ["token"],
+            "result_code": ["resultCode"],
+        },
+    },
+    "digipay": {
+        "lookup": ("order_id", ["providerId", "provider_id"]),
+        "extra": {
+            "tracking_code": ["trackingCode", "tracking_code"],
+            "result": ["result", "status"],
+        },
+    },
+}
 
-def _extract_authority(request, slug):
+# کلیدهای عمومی authority برای درگاه‌های ناشناخته (خارج از spec) — رفتار قدیمی.
+_GENERIC_AUTHORITY_KEYS = ("Authority", "authority", "trackId", "token", "id", "RefId")
+
+
+def _params(request):
+    """پارامترهای callback را از POST یا GET برمی‌گرداند."""
+    return request.POST if request.method == "POST" else request.GET
+
+
+def _locate_payment(request, slug):
     """
-    authority را از callback می‌خواند. بسته به درگاه ممکن است در GET یا POST،
-    و با نام‌های مختلف باشد. نام‌های رایج را پوشش می‌دهیم.
+    رکورد Payment مربوط به این callback را پیدا می‌کند. برای درگاه‌های شناخته‌شده
+    از _CALLBACK_SPEC، و برای درگاه ناشناخته از کلیدهای عمومی authority.
     """
-    params = request.POST if request.method == "POST" else request.GET
-    for key in ("Authority", "authority", "trackId", "token", "id", "RefId"):
-        if key in params:
-            return params[key]
+    params = _params(request)
+    spec = _CALLBACK_SPEC.get(slug)
+    if spec is not None:
+        field, keys = spec["lookup"]
+        for key in keys:
+            value = params.get(key)
+            if value:
+                return (
+                    Payment.objects.filter(gateway_slug=slug, **{field: value})
+                    .order_by("-created_at")
+                    .first()
+                )
+        return None
+
+    # درگاه خارج از spec: تلاش عمومی با authority.
+    for key in _GENERIC_AUTHORITY_KEYS:
+        value = params.get(key)
+        if value:
+            return (
+                Payment.objects.filter(gateway_slug=slug, authority=value)
+                .order_by("-created_at")
+                .first()
+            )
     return None
 
 
-def _extract_extra(request):
+def _extract_extra(request, slug):
     """
-    داده‌ی اضافی callback را برای درگاه‌هایی که در verify به آن نیاز دارند
-    استخراج می‌کند:
-    - ملت: SaleReferenceId و SaleOrderId (POST) برای bpVerifySettleRequest
-    - دیجی‌پی: trackingCode (GET/POST) برای purchases/verify
+    داده‌ی اضافی callback را برای درگاه‌هایی که در verify به آن نیاز دارند می‌سازد:
+    - ملت: sale_reference_id/sale_order_id/res_code/... (bpVerifySettleRequest)
+    - سامان: ref_num (RefNum) و state
+    - ایران‌کیش: reference_id/token/result_code
+    - سداد: res_code
+    - دیجی‌پی: tracking_code و result
     """
-    params = request.POST if request.method == "POST" else request.GET
+    spec = _CALLBACK_SPEC.get(slug)
+    if spec is None:
+        return None
+    params = _params(request)
     extra = {}
-    # ملت — ResCode باید قبل از SaleReferenceId بررسی شود (کنسل شدن فاقد SaleReferenceId است)
-    res_code = params.get("ResCode")
-    if res_code:
-        extra["res_code"] = res_code
-    sale_ref = params.get("SaleReferenceId") or params.get("saleReferenceId")
-    sale_order = params.get("SaleOrderId") or params.get("saleOrderId")
-    if sale_ref:
-        extra["sale_reference_id"] = sale_ref
-    if sale_order:
-        extra["sale_order_id"] = sale_order
-    card_pan = params.get("CardHolderPan")
-    if card_pan:
-        extra["card_number"] = card_pan
-    final_amount = params.get("FinalAmount")
-    if final_amount:
-        extra["final_amount"] = final_amount
-    # دیجی‌پی
-    tracking_code = params.get("trackingCode") or params.get("tracking_code")
-    if tracking_code:
-        extra["tracking_code"] = tracking_code
+    for verify_key, candidates in spec["extra"].items():
+        for candidate in candidates:
+            if params.get(candidate):
+                extra[verify_key] = params[candidate]
+                break
     return extra or None
 
 
 def callback(request, slug):
     """
-    مسیر بازگشت از بانک. authority را می‌خواند، verify می‌زند، و به callback_url
-    رکورد با پارامتر وضعیت هدایت می‌کند.
+    مسیر بازگشت از بانک. رکورد را طبق spec درگاه پیدا می‌کند، verify می‌زند، و به
+    callback_url رکورد با پارامتر وضعیت هدایت می‌کند.
     """
-    authority = _extract_authority(request, slug)
-    if not authority:
-        raise Http404("authority در callback یافت نشد.")
-
-    extra = _extract_extra(request)
-    payment = services.verify_payment(slug, authority, extra=extra)
+    payment = _locate_payment(request, slug)
     if payment is None:
+        raise Http404("رکورد پرداختی برای این callback یافت نشد.")
+
+    extra = _extract_extra(request, slug)
+    result = services.verify_payment(slug, payment.authority, extra=extra)
+    if result is None:
         raise Http404("رکورد پرداختی برای این authority یافت نشد.")
+    payment = result
 
     sep = "&" if "?" in payment.callback_url else "?"
     status = "success" if payment.is_success else "failed"

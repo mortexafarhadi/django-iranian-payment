@@ -35,7 +35,8 @@
     ]
 
     IRANIAN_PAYMENT = {
-        "sandbox": True,   # False در production (bpm.shaparak.ir)
+        "currency": "rial",   # واحد ورودی مبلغ: "rial" (پیش‌فرض) یا "toman"
+        "sandbox": False,   # پیش‌فرض سراسری
         "gateways": {
             "mellat": {
                 "terminal_id": "1234567",        # شماره ترمینال از ملت
@@ -43,9 +44,16 @@
                 "password": "your-password",     # رمز از ملت
                 "settle_mode": "verify_settle",  # توصیه: تأیید+واریز اتمیک
                 # یا "verify_only" برای verify جداگانه (نیاز به settle() بعداً)
+                "sandbox": True,   # ← sandbox مجزای ملت (pgw.dev.bpmellat.ir)
+                # False = محیط عملیاتی (bpm.shaparak.ir). با این کلید می‌توانی ملت
+                # را sandbox بگذاری و درگاه دیگری را live، هم‌زمان.
+                # ⚠️ در عمل sandbox ملت پاسخ‌گو نبود؛ تست واقعی روی live انجام شد.
             },
         },
     }
+
+    # sandbox مجزای هر درگاه: کلید "sandbox" داخل config درگاه بر مقدار سراسری
+    # اولویت دارد (اولویت کامل: آرگومان get_gateway > config درگاه > سراسری > False).
 
 ━━ قدم ۳: ثبت درگاه ملت در registry پکیج ━━━━━━━━━━━━━━━━━━
 
@@ -198,6 +206,132 @@ def payment_result(request):
 #           sale_reference_id=sale_reference_id,
 #       )
 #       return result.is_success
+
+
+# ═════════════════════════════════════════════════════════════
+#  ملت — دو حالت مدیریت دیتابیس
+# ═════════════════════════════════════════════════════════════
+#
+# حالت ۱ (پکیج DB را مدیریت می‌کند): همان checkout/payment_result بالا.
+#   • کاربر را به /payment/go/<id>/ می‌فرستی؛ view پکیج فرم POST auto-submit را
+#     می‌سازد (از template). callback پکیج SaleReferenceId/SaleOrderId را از POST
+#     می‌خواند و verify می‌زند.
+#
+# حالت ۲ (خودت DB را مدیریت می‌کنی): کد زیر. ملت سخت‌ترین حالت است چون:
+#   • هدایت: POST فرم (نه redirect ساده). result.redirect_method == "POST" و
+#     result.redirect_fields == {"RefId": ...}. در حالت ۲ template پکیج در دسترس
+#     نیست (اپ در INSTALLED_APPS نیست)، پس باید فرم auto-submit را خودت بسازی.
+#   • callback: POST — ملت RefId, ResCode, SaleOrderId, SaleReferenceId و گاهی
+#     CardHolderPan/FinalAmount می‌فرستد.
+#   • رکوردت را با order_id(==SaleOrderId) پیدا کن (RefId هم authority است).
+#   • verify به extra نیاز دارد: res_code, sale_reference_id, sale_order_id و
+#     اختیاری card_number/final_amount. اگر کاربر کنسل کرد (ResCode=17) پکیج بدون
+#     تماس SOAP نتیجه‌ی ناموفق برمی‌گرداند.
+#   • amount در verify باید amount_sent ذخیره‌شده باشد، نه مبلغ پایه.
+# مدل نمونه‌ی MyPayment و توضیح کامل در scripts/django_custom_db.py است.
+
+from django.utils.html import escape
+
+from django_iranian_payment import get_gateway
+from django_iranian_payment.core.models import PaymentRequest
+
+
+def checkout_self_managed(request):
+    """حالت ۲ ملت — شروع پرداخت و ساخت فرم POST auto-submit به دست خودت."""
+    from yourapp.models import MyPayment
+
+    order_id = "1001"  # ملت orderId عددی یکتا می‌خواهد
+    amount = 500_000  # ریال
+    callback_url = request.build_absolute_uri(
+        reverse("mypay-callback", kwargs={"slug": "mellat"})
+    )
+
+    record = MyPayment.objects.create(
+        gateway_slug="mellat",
+        order_id=order_id,
+        amount=amount,
+        callback_url=callback_url,
+        status="waiting",
+    )
+
+    gw = get_gateway("mellat")
+    try:
+        result = gw.initiate(
+            PaymentRequest(amount=amount, callback_url=callback_url, order_id=order_id)
+        )
+    except GatewayError as e:
+        record.status = "failed"
+        record.error_message = str(e)
+        record.save()
+        return HttpResponse(f"خطا در اتصال به ملت: {e}", status=502)
+
+    record.authority = result.authority  # RefId
+    record.amount_sent = result.amount_to_send
+    record.redirect_url = result.redirect_url
+    record.redirect_fields = result.redirect_fields  # {"RefId": ...}
+    record.status = "redirect"
+    record.save()
+
+    # ملت POST می‌خواهد → فرم auto-submit بساز (در حالت ۲ template پکیج نیست).
+    inputs = "".join(
+        f'<input type="hidden" name="{escape(k)}" value="{escape(str(v))}">'
+        for k, v in (result.redirect_fields or {}).items()
+    )
+    html = (
+        "<!doctype html><html><head><meta charset='utf-8'></head>"
+        "<body onload='document.forms[0].submit()'>در حال انتقال به بانک ملت…"
+        f"<form method='post' action='{escape(result.redirect_url)}'>{inputs}"
+        "<noscript><button type='submit'>ادامه</button></noscript>"
+        "</form></body></html>"
+    )
+    return HttpResponse(html)
+
+
+def callback_self_managed(request):
+    """حالت ۲ ملت — استخراج extra از POST، verify، و به‌روزرسانی مدل خودت."""
+    from yourapp.models import MyPayment
+
+    p = request.POST
+    sale_order_id = p.get("SaleOrderId")
+    if not sale_order_id:
+        return HttpResponse("SaleOrderId در callback نبود.", status=400)
+
+    record = MyPayment.objects.filter(
+        gateway_slug="mellat", order_id=sale_order_id
+    ).first()
+    if record is None:
+        return HttpResponse("رکورد یافت نشد.", status=404)
+    if record.status == "complete":
+        return HttpResponse("قبلاً تأیید شده.")
+
+    # extra لازم ملت برای verify (همان چیزی که _extract_extra پکیج می‌سازد):
+    extra = {
+        "res_code": p.get("ResCode"),
+        "sale_reference_id": p.get("SaleReferenceId"),
+        "sale_order_id": sale_order_id,
+        "card_number": p.get("CardHolderPan"),
+        "final_amount": p.get("FinalAmount"),
+    }
+
+    gw = get_gateway("mellat")
+    result = gw.verify(
+        authority=record.authority,  # RefId
+        amount=record.amount_sent,  # ← نه record.amount
+        order_id=record.order_id,
+        extra={k: v for k, v in extra.items() if v},
+    )
+
+    if result.is_success:
+        record.status = "complete"
+        record.reference_id = result.reference_id or ""
+        record.card_number = result.card_number or ""
+        record.raw = result.raw or {}  # شامل sale_*_id برای settle/reverse بعدی
+        record.save()
+        return HttpResponse(f"پرداخت موفق! SaleReferenceId: {record.reference_id}")
+    record.status = "failed"
+    record.error_message = result.error_message or ""
+    record.save()
+    return HttpResponse(f"پرداخت ناموفق: {record.error_message}")
 
 
 if __name__ == "__main__":

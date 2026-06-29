@@ -22,7 +22,8 @@ uat.mydigipay.info قابل تست است.
     ]
 
     IRANIAN_PAYMENT = {
-        "sandbox": True,   # محیط UAT/staging دیجی‌پی
+        "currency": "rial",   # واحد ورودی مبلغ: "rial" (پیش‌فرض) یا "toman"
+        "sandbox": False,   # پیش‌فرض سراسری
         "gateways": {
             "digipay": {
                 "username": "your-username",          # از پورتال دیجی‌پی
@@ -30,11 +31,17 @@ uat.mydigipay.info قابل تست است.
                 "client_id": "your-client-id",        # OAuth2 client
                 "client_secret": "your-client-secret",
                 "provider_id": "your-provider-id",    # شناسه‌ی کسب‌وکار شما
+                "sandbox": True,   # ← sandbox مجزای دیجی‌پی (uat.mydigipay.info)
+                # دیجی‌پی URL سندباکس واقعی دارد؛ True اینجا این درگاه را روی UAT
+                # می‌برد حتی اگر sandbox سراسری False باشد.
                 # اختیاری:
                 # "ticket_type": 11,   # پیش‌فرض ۱۱ (UPG). انواع دیگر: ۳۸ (QR)
             },
         },
     }
+
+    # sandbox مجزای هر درگاه: کلید "sandbox" داخل config درگاه بر مقدار سراسری
+    # اولویت دارد (اولویت کامل: آرگومان get_gateway > config درگاه > سراسری > False).
 
 ━━ قدم ۳: ثبت درگاه در registry ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -141,6 +148,102 @@ def payment_result(request):
 #
 # بررسی کن که در _extract_extra (views.py پکیج) trackingCode خوانده می‌شود.
 # اگر نام پارامتر callback در API دیجی‌پی تغییر کرد، آن را به‌روز کن.
+
+
+# ═════════════════════════════════════════════════════════════
+#  دیجی‌پی — دو حالت مدیریت دیتابیس
+# ═════════════════════════════════════════════════════════════
+#
+# حالت ۱ (پکیج DB را مدیریت می‌کند): همان checkout/payment_result بالا.
+#
+# حالت ۲ (خودت DB را مدیریت می‌کنی): کد زیر. مشخصات دیجی‌پی در این حالت:
+#   • هدایت: GET ساده به redirect_url (که از پاسخ API خوانده می‌شود، نه ساخته).
+#   • callback: دیجی‌پی trackingCode, providerId, result را برمی‌گرداند.
+#   • ⚠️ مهم: callback ticket (authority) را برنمی‌گرداند! رکوردت را با
+#     order_id(==providerId که خودت فرستادی) پیدا کن، نه با authority.
+#   • verify به trackingCode نیاز دارد و providerId را دوباره می‌فرستد (پکیج
+#     providerId را از order_id می‌گیرد). extra={"tracking_code": trackingCode,
+#     "result": result}.
+#   • amount در verify باید amount_sent ذخیره‌شده باشد، نه مبلغ پایه.
+# مدل نمونه‌ی MyPayment و توضیح کامل در scripts/django_custom_db.py است.
+
+from django_iranian_payment import get_gateway
+from django_iranian_payment.core.models import PaymentRequest
+
+
+def checkout_self_managed(request):
+    """حالت ۲ دیجی‌پی — شروع پرداخت با مدل خودت (MyPayment)."""
+    from yourapp.models import MyPayment
+
+    order_id = "DIGIPAY-ORDER-001"  # همین به‌عنوان providerId در callback برمی‌گردد
+    amount = 350_000  # ریال
+    callback_url = request.build_absolute_uri(
+        reverse("mypay-callback", kwargs={"slug": "digipay"})
+    )
+
+    record = MyPayment.objects.create(
+        gateway_slug="digipay",
+        order_id=order_id,
+        amount=amount,
+        callback_url=callback_url,
+        status="waiting",
+    )
+
+    gw = get_gateway("digipay")
+    try:
+        result = gw.initiate(
+            PaymentRequest(amount=amount, callback_url=callback_url, order_id=order_id)
+        )
+    except GatewayError as e:
+        record.status = "failed"
+        record.error_message = str(e)
+        record.save()
+        return HttpResponse(f"خطا در اتصال به دیجی‌پی: {e}", status=502)
+
+    record.authority = result.authority  # ticket (در callback برنمی‌گردد، ولی نگه‌دار)
+    record.amount_sent = result.amount_to_send
+    record.status = "redirect"
+    record.save()
+    return HttpResponseRedirect(result.redirect_url)
+
+
+def callback_self_managed(request):
+    """حالت ۲ دیجی‌پی — پیدا کردن رکورد با providerId، verify با trackingCode."""
+    from yourapp.models import MyPayment
+
+    params = request.POST if request.method == "POST" else request.GET
+    provider_id = params.get("providerId")  # == order_id ما
+    if not provider_id:
+        return HttpResponse("providerId در callback نبود.", status=400)
+
+    record = MyPayment.objects.filter(
+        gateway_slug="digipay", order_id=provider_id
+    ).first()
+    if record is None:
+        return HttpResponse("رکورد یافت نشد.", status=404)
+    if record.status == "complete":
+        return HttpResponse("قبلاً تأیید شده.")
+
+    gw = get_gateway("digipay")
+    result = gw.verify(
+        authority=record.authority,
+        amount=record.amount_sent,  # ← نه record.amount
+        order_id=record.order_id,  # == providerId برای verify
+        extra={
+            "tracking_code": params.get("trackingCode"),
+            "result": params.get("result"),
+        },
+    )
+
+    if result.is_success:
+        record.status = "complete"
+        record.reference_id = result.reference_id or ""  # rrn
+        record.save()
+        return HttpResponse(f"پرداخت موفق! کد پیگیری: {record.reference_id}")
+    record.status = "failed"
+    record.error_message = result.error_message or ""
+    record.save()
+    return HttpResponse(f"پرداخت ناموفق: {record.error_message}")
 
 
 if __name__ == "__main__":

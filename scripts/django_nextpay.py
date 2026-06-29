@@ -21,15 +21,20 @@
     ]
 
     IRANIAN_PAYMENT = {
-        "sandbox": True,
+        "currency": "rial",   # واحد ورودی مبلغ: "rial" (پیش‌فرض) یا "toman"
+        "sandbox": False,   # پیش‌فرض سراسری
         "gateways": {
             "nextpay": {
                 "api_key": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
                 # api_key را از پنل نکست‌پی (https://nextpay.org) بگیر.
                 # هنگام ثبت، دامنه/IP سرورت را وارد کن وگرنه code=-33 می‌گیری.
+                # ⚠️ ویژه‌ی نکست‌پی: URL سندباکس جدا ندارد؛ فلگ "sandbox" بی‌اثر است.
             },
         },
     }
+
+    # sandbox مجزای هر درگاه: کلید "sandbox" داخل config درگاه بر مقدار سراسری
+    # اولویت دارد — برای درگاه‌هایی که URL سندباکس جدا دارند. نکست‌پی مستثناست.
 
 ━━ قدم ۳: ثبت درگاه در registry ━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -59,7 +64,7 @@
     به تومان نمایش داده می‌شوند — این طبیعی است (تبدیل سمت نکست‌پی).
   • کد موفقیت ساخت توکن code=-1 است (عجیب ولی طبق مستند رسمی).
     کد code=0 یعنی ناموفق.
-  • trans_id در callback GET: /callback/nextpay/?transId=<id>&orderId=...
+  • trans_id در callback GET: /callback/nextpay/?trans_id=<id>&order_id=...&amount=...
   • کدهای DUPLICATE: code=-25 و code=-49 (قبلاً تأیید شده).
   • نکست‌پی refund() هم دارد (بازگشت وجه پس از verify).
 """
@@ -131,6 +136,95 @@ def payment_result(request):
 #       gw = get_gateway("nextpay")
 #       result = gw.refund(trans_id=trans_id, amount=amount)
 #       return result.is_success
+
+
+# ═════════════════════════════════════════════════════════════
+#  نکست‌پی — دو حالت مدیریت دیتابیس
+# ═════════════════════════════════════════════════════════════
+#
+# حالت ۱ (پکیج DB را مدیریت می‌کند): همان checkout/payment_result بالا.
+#
+# حالت ۲ (خودت DB را مدیریت می‌کنی): کد زیر. مشخصات نکست‌پی در این حالت:
+#   • هدایت: GET ساده به redirect_url.
+#   • callback: GET — نکست‌پی trans_id, order_id, amount را برمی‌گرداند.
+#   • authority همان trans_id است؛ رکوردت را با authority(==trans_id) پیدا کن.
+#   • verify هیچ extra لازم ندارد.
+#   • amount در verify باید amount_sent ذخیره‌شده باشد، نه مبلغ پایه.
+# مدل نمونه‌ی MyPayment و توضیح کامل در scripts/django_custom_db.py است.
+
+from django_iranian_payment import get_gateway
+from django_iranian_payment.core.models import PaymentRequest
+
+
+def checkout_self_managed(request):
+    """حالت ۲ نکست‌پی — شروع پرداخت با مدل خودت (MyPayment)."""
+    from yourapp.models import MyPayment
+
+    order_id = "NP-ORDER-001"
+    amount = 180_000  # ریال
+    callback_url = request.build_absolute_uri(
+        reverse("mypay-callback", kwargs={"slug": "nextpay"})
+    )
+
+    record = MyPayment.objects.create(
+        gateway_slug="nextpay",
+        order_id=order_id,
+        amount=amount,
+        callback_url=callback_url,
+        status="waiting",
+    )
+
+    gw = get_gateway("nextpay")
+    try:
+        result = gw.initiate(
+            PaymentRequest(amount=amount, callback_url=callback_url, order_id=order_id)
+        )
+    except GatewayError as e:
+        record.status = "failed"
+        record.error_message = str(e)
+        record.save()
+        return HttpResponse(f"خطا در اتصال به نکست‌پی: {e}", status=502)
+
+    record.authority = result.authority  # trans_id
+    record.amount_sent = result.amount_to_send
+    record.status = "redirect"
+    record.save()
+    return HttpResponseRedirect(result.redirect_url)
+
+
+def callback_self_managed(request):
+    """حالت ۲ نکست‌پی — verify و به‌روزرسانی مدل خودت."""
+    from yourapp.models import MyPayment
+
+    trans_id = request.GET.get("trans_id")
+    if not trans_id:
+        return HttpResponse("trans_id در callback نبود.", status=400)
+
+    record = MyPayment.objects.filter(
+        gateway_slug="nextpay", authority=trans_id
+    ).first()
+    if record is None:
+        return HttpResponse("رکورد یافت نشد.", status=404)
+    if record.status == "complete":
+        return HttpResponse("قبلاً تأیید شده.")
+
+    gw = get_gateway("nextpay")
+    result = gw.verify(
+        authority=trans_id,
+        amount=record.amount_sent,  # ← نه record.amount
+        order_id=record.order_id,
+    )
+
+    if result.is_success:
+        record.status = "complete"
+        record.reference_id = result.reference_id or ""
+        record.card_number = result.card_number or ""
+        record.save()
+        return HttpResponse(f"پرداخت موفق! شماره پیگیری: {record.reference_id}")
+    record.status = "failed"
+    record.error_message = result.error_message or ""
+    record.save()
+    return HttpResponse(f"پرداخت ناموفق: {record.error_message}")
 
 
 if __name__ == "__main__":

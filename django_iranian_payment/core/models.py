@@ -1,7 +1,12 @@
 """
 مدل‌های داده‌ی مشترک بین همه‌ی درگاه‌ها.
 
-قاعده‌ی طلایی: amount همیشه و همه‌جا به ریال است.
+قاعده‌ی طلایی: واحد «بانک» همیشه و همه‌جا ریال است. amount_to_send که به درگاه و
+verify می‌رود همیشه ریال است. ولی کاربر می‌تواند مبلغ ورودی را به تومان بدهد:
+PaymentRequest.currency واحد ورودی را مشخص می‌کند و resolve_amount() آن را در همان
+لبه به ریال تبدیل می‌کند. پس تبدیل واحد فقط یک‌بار و در ابتدای کار انجام می‌شود و
+بقیه‌ی مسیر (درگاه، fee، verify) دست‌نخورده ریالی می‌ماند.
+
 کارمزد در سطح PaymentRequest تعریف می‌شود، نه داخل تک‌تک درگاه‌ها — درگاه فقط
 amount نهایی (amount_to_send) را می‌بیند و می‌فرستد. این تله‌ی «verify با مبلغ
 اشتباه» را از ریشه می‌بندد.
@@ -12,6 +17,22 @@ from enum import Enum
 from typing import Optional
 
 from .fee import FeeConfig, FeeResult, apply_fee
+
+
+class Currency(str, Enum):
+    """واحد مبلغی که کاربر ورودی می‌دهد. بانک همیشه ریال می‌گیرد."""
+
+    RIAL = "rial"
+    TOMAN = "toman"
+
+
+# ضریب تبدیل هر واحد به ریال. ۱ تومان = ۱۰ ریال.
+_RIAL_PER_UNIT = {Currency.RIAL: 1, Currency.TOMAN: 10}
+
+
+def to_rial(amount: int, currency) -> int:
+    """مبلغ را از واحد ورودی به ریال (واحد بانک) تبدیل می‌کند. ریال→ریال بدون تغییر."""
+    return amount * _RIAL_PER_UNIT[Currency(currency)]
 
 
 class PaymentStatus(str, Enum):
@@ -26,32 +47,51 @@ class PaymentStatus(str, Enum):
 class PaymentRequest:
     """ورودی شروع یک پرداخت."""
 
-    amount: int  # ریال، حتماً بزرگ‌تر از صفر (مبلغ پایه‌ی سفارش)
+    amount: int  # مبلغ پایه‌ی سفارش در واحد currency (پیش‌فرض ریال)، حتماً > صفر
     callback_url: str  # آدرس کاملی که بانک کاربر را به آن برمی‌گرداند
     order_id: str  # شناسه‌ی یکتای سفارش در سیستم تو
     description: str = ""  # متن نمایشی روی صفحه‌ی بانک (اختیاری)
     mobile: Optional[str] = None  # موبایل پرداخت‌کننده (اختیاری)
     email: Optional[str] = None  # ایمیل پرداخت‌کننده (اختیاری)
     fee: Optional[FeeConfig] = None  # تنظیم کارمزد؛ None یعنی بدون کارمزد
+    currency: Currency = Currency.RIAL  # واحد amount و fee (rial یا toman)
 
     def __post_init__(self):
         if self.amount <= 0:
-            raise ValueError("amount باید بزرگ‌تر از صفر باشد (ریال)")
+            raise ValueError("amount باید بزرگ‌تر از صفر باشد")
+        # نرمال‌سازی currency رشته‌ای به enum (و اعتبارسنجی)
+        self.currency = Currency(self.currency)
+
+    def _fee_in_rial(self) -> FeeConfig:
+        """نسخه‌ی ریالی از fee می‌سازد (fixed و max_fee از واحد ورودی به ریال)."""
+        f = self.fee
+        if self.currency == Currency.RIAL:
+            return f
+        return FeeConfig(
+            rate_bps=f.rate_bps,  # نرخ bps واحد‌مستقل است
+            fixed=to_rial(f.fixed, self.currency),
+            who_pays=f.who_pays,
+            max_fee=(
+                to_rial(f.max_fee, self.currency) if f.max_fee is not None else None
+            ),
+        )
 
     def resolve_amount(self) -> FeeResult:
         """
-        مبلغ نهایی ارسالی به بانک را محاسبه می‌کند.
-        اگر fee تنظیم نشده باشد، amount_to_send == amount است (بدون تغییر).
-        خروجی این متد مرجع یکتاست: همان amount_to_send به initiate و verify می‌رود.
+        مبلغ نهایی ارسالی به بانک را محاسبه می‌کند — همیشه به ریال.
+        ابتدا amount از واحد currency به ریال تبدیل می‌شود، سپس (در صورت وجود) کارمزد
+        ریالی اعمال می‌شود. خروجی این متد مرجع یکتاست: همان amount_to_send (ریال) به
+        initiate و verify می‌رود.
         """
+        rial_amount = to_rial(self.amount, self.currency)
         if self.fee is None:
             return FeeResult(
-                base_amount=self.amount,
+                base_amount=rial_amount,
                 fee=0,
-                amount_to_send=self.amount,
+                amount_to_send=rial_amount,
                 who_pays=None,  # type: ignore[arg-type]
             )
-        return apply_fee(self.amount, self.fee)
+        return apply_fee(rial_amount, self._fee_in_rial())
 
 
 @dataclass

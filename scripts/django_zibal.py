@@ -19,15 +19,23 @@ merchant="zibal" بدون ثبت‌نام و از هر IP قابل تست است
     ]
 
     IRANIAN_PAYMENT = {
-        "sandbox": True,   # False در production
+        "currency": "rial",   # واحد ورودی مبلغ: "rial" (پیش‌فرض) یا "toman"
+        "sandbox": False,   # پیش‌فرض سراسری
         "gateways": {
             "zibal": {
                 "merchant": "zibal",
-                # برای sandbox از "zibal" استفاده کن (نیاز به ثبت‌نام ندارد).
+                # ⚠️ ویژه‌ی زیبال: sandbox این درگاه با فلگ "sandbox" کنترل نمی‌شود،
+                # بلکه با مقدار merchant. merchant="zibal" یعنی حالت تست (بدون ثبت‌نام).
                 # در production، merchant را از پنل زیبال (https://zibal.ir) بگیر.
+                # پس کلید "sandbox" برای زیبال بی‌اثر است (برخلاف زرین‌پال/ملت/دیجی‌پی
+                # که URL سندباکس جدا دارند و به فلگ sandbox واکنش نشان می‌دهند).
             },
         },
     }
+
+    # sandbox مجزای هر درگاه: برای درگاه‌هایی که URL سندباکس جدا دارند، کلید
+    # "sandbox" داخل config همان درگاه بر مقدار سراسری اولویت دارد. زیبال از این
+    # قاعده مستثناست (بالا را ببین).
 
 ━━ قدم ۳: migration ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -142,6 +150,94 @@ def payment_result(request):
 #   # با لینک: /payment/go/<payment.id>/
 #
 # view go_to_gateway از URL patterns پکیج این کار را خودکار انجام می‌دهد.
+
+
+# ═════════════════════════════════════════════════════════════
+#  زیبال — دو حالت مدیریت دیتابیس
+# ═════════════════════════════════════════════════════════════
+#
+# حالت ۱ (پکیج DB را مدیریت می‌کند): همان checkout/payment_result بالا
+#   (services + مدل Payment پکیج + url داخلی /payment/callback/zibal/).
+#
+# حالت ۲ (خودت DB را مدیریت می‌کنی): کد زیر. مشخصات زیبال در این حالت:
+#   • هدایت: GET ساده. فرم POST لازم نیست.
+#   • callback: GET — زیبال ?trackId=...&success=1&status=1 می‌فرستد.
+#   • authority در زیبال همان trackId است؛ رکوردت را با authority(==trackId) پیدا کن.
+#   • verify هیچ extra لازم ندارد.
+#   • amount در verify باید amount_sent ذخیره‌شده باشد، نه مبلغ پایه.
+# مدل نمونه‌ی MyPayment و توضیح کامل در scripts/django_custom_db.py است.
+
+from django_iranian_payment import get_gateway
+from django_iranian_payment.core.models import PaymentRequest
+
+
+def checkout_self_managed(request):
+    """حالت ۲ زیبال — شروع پرداخت با مدل خودت (MyPayment)."""
+    from yourapp.models import MyPayment
+
+    order_id = "ORDER-3001"
+    amount = 200_000  # ریال
+    callback_url = request.build_absolute_uri(
+        reverse("mypay-callback", kwargs={"slug": "zibal"})
+    )
+
+    record = MyPayment.objects.create(
+        gateway_slug="zibal",
+        order_id=order_id,
+        amount=amount,
+        callback_url=callback_url,
+        status="waiting",
+    )
+
+    gw = get_gateway("zibal")
+    try:
+        result = gw.initiate(
+            PaymentRequest(amount=amount, callback_url=callback_url, order_id=order_id)
+        )
+    except GatewayError as e:
+        record.status = "failed"
+        record.error_message = str(e)
+        record.save()
+        return HttpResponse(f"خطا در اتصال به زیبال: {e}", status=502)
+
+    record.authority = result.authority  # == trackId
+    record.amount_sent = result.amount_to_send
+    record.status = "redirect"
+    record.save()
+    return HttpResponseRedirect(result.redirect_url)
+
+
+def callback_self_managed(request):
+    """حالت ۲ زیبال — verify و به‌روزرسانی مدل خودت."""
+    from yourapp.models import MyPayment
+
+    track_id = request.GET.get("trackId")
+    if not track_id:
+        return HttpResponse("trackId در callback نبود.", status=400)
+
+    record = MyPayment.objects.filter(gateway_slug="zibal", authority=track_id).first()
+    if record is None:
+        return HttpResponse("رکورد یافت نشد.", status=404)
+    if record.status == "complete":
+        return HttpResponse("قبلاً تأیید شده.")
+
+    gw = get_gateway("zibal")
+    result = gw.verify(
+        authority=track_id,
+        amount=record.amount_sent,  # ← نه record.amount
+        order_id=record.order_id,
+    )
+
+    if result.is_success:
+        record.status = "complete"
+        record.reference_id = result.reference_id or ""
+        record.card_number = result.card_number or ""
+        record.save()
+        return HttpResponse(f"پرداخت موفق! کد پیگیری: {record.reference_id}")
+    record.status = "failed"
+    record.error_message = result.error_message or ""
+    record.save()
+    return HttpResponse(f"پرداخت ناموفق: {record.error_message}")
 
 
 if __name__ == "__main__":

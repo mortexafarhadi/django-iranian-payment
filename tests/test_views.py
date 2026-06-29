@@ -133,3 +133,118 @@ def test_go_to_gateway_missing_redirect_404(client):
     )
     resp = client.get(f"/payment/go/{payment.pk}/")
     assert resp.status_code == 404
+
+
+# ─────────────────────────────────────────────────────────────
+#  تست پیدا کردن رکورد در callback برای همه‌ی درگاه‌ها (_locate_payment)
+#  رگرسیون باگ: قبلاً _extract_authority برای nextpay/sadad/saman/digipay
+#  رکورد را پیدا نمی‌کرد و callback آن‌ها در حالت پکیج ۴۰۴ می‌داد.
+# ─────────────────────────────────────────────────────────────
+
+from django.test import RequestFactory  # noqa: E402
+
+from django_iranian_payment.contrib.django.views import (  # noqa: E402
+    _locate_payment,
+    _extract_extra,
+)
+
+
+def _mk_payment(slug, *, order_id, authority):
+    return Payment.objects.create(
+        gateway_slug=slug,
+        order_id=order_id,
+        authority=authority,
+        amount=1000,
+        amount_sent=1000,
+        callback_url="https://shop.com/result",
+        status=PaymentStatus.REDIRECT_TO_BANK,
+    )
+
+
+@pytest.mark.django_db
+def test_locate_zarinpal_by_authority():
+    rf = RequestFactory()
+    p = _mk_payment("zarinpal", order_id="10", authority="AUTHZP")
+    req = rf.get("/cb/", {"Authority": "AUTHZP", "Status": "OK"})
+    assert _locate_payment(req, "zarinpal").pk == p.pk
+
+
+@pytest.mark.django_db
+def test_locate_mellat_by_refid_authority():
+    rf = RequestFactory()
+    p = _mk_payment("mellat", order_id="20", authority="REF123")
+    req = rf.post("/cb/", {"RefId": "REF123", "ResCode": "0", "SaleOrderId": "20"})
+    assert _locate_payment(req, "mellat").pk == p.pk
+    extra = _extract_extra(req, "mellat")
+    assert extra["res_code"] == "0"
+    assert extra["sale_order_id"] == "20"
+
+
+@pytest.mark.django_db
+def test_locate_nextpay_by_trans_id():
+    rf = RequestFactory()
+    p = _mk_payment("nextpay", order_id="30", authority="TRANS9")
+    req = rf.get("/cb/", {"trans_id": "TRANS9", "order_id": "30"})
+    assert _locate_payment(req, "nextpay").pk == p.pk
+
+
+@pytest.mark.django_db
+def test_locate_sadad_by_capital_token():
+    rf = RequestFactory()
+    p = _mk_payment("sadad", order_id="40", authority="TOK40")
+    # سداد فیلد را با حرف بزرگ Token می‌فرستد (POST)
+    req = rf.post("/cb/", {"Token": "TOK40", "ResCode": "0"})
+    assert _locate_payment(req, "sadad").pk == p.pk
+
+
+@pytest.mark.django_db
+def test_locate_saman_by_order_id_resnum():
+    # سامان توکن را در callback برنمی‌گرداند → باید با ResNum(==order_id) پیدا شود
+    rf = RequestFactory()
+    p = _mk_payment("saman", order_id="50", authority="SAMTOKEN")
+    req = rf.post("/cb/", {"ResNum": "50", "RefNum": "RN50", "State": "OK"})
+    found = _locate_payment(req, "saman")
+    assert found.pk == p.pk
+    extra = _extract_extra(req, "saman")
+    assert extra["ref_num"] == "RN50"
+    assert extra["state"] == "OK"
+
+
+@pytest.mark.django_db
+def test_locate_digipay_by_order_id_provider():
+    # دیجی‌پی ticket را برنمی‌گرداند → باید با providerId(==order_id) پیدا شود
+    rf = RequestFactory()
+    p = _mk_payment("digipay", order_id="60", authority="TICKET60")
+    req = rf.get("/cb/", {"providerId": "60", "trackingCode": "TC60", "result": "0"})
+    found = _locate_payment(req, "digipay")
+    assert found.pk == p.pk
+    extra = _extract_extra(req, "digipay")
+    assert extra["tracking_code"] == "TC60"
+
+
+@pytest.mark.django_db
+def test_locate_irankish_by_token():
+    rf = RequestFactory()
+    p = _mk_payment("irankish", order_id="70", authority="IKTOKEN")
+    req = rf.post(
+        "/cb/", {"token": "IKTOKEN", "referenceId": "RID70", "resultCode": "true"}
+    )
+    assert _locate_payment(req, "irankish").pk == p.pk
+    extra = _extract_extra(req, "irankish")
+    assert extra["reference_id"] == "RID70"
+
+
+@pytest.mark.django_db
+def test_locate_returns_none_when_no_match():
+    rf = RequestFactory()
+    req = rf.get("/cb/", {"Authority": "GHOST"})
+    assert _locate_payment(req, "zarinpal") is None
+
+
+@pytest.mark.django_db
+def test_unknown_gateway_falls_back_to_generic_authority():
+    rf = RequestFactory()
+    p = _mk_payment("somecustom", order_id="80", authority="CUSTOMAUTH")
+    req = rf.get("/cb/", {"Authority": "CUSTOMAUTH"})
+    assert _locate_payment(req, "somecustom").pk == p.pk
+    assert _extract_extra(req, "somecustom") is None

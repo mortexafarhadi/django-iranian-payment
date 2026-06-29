@@ -31,6 +31,23 @@ def test_start_payment_creates_record_and_saves_authority():
 
 
 @pytest.mark.django_db
+def test_start_payment_toman_converts_and_stores_rial():
+    # currency=toman: ۱۵۰۰۰ تومان → بانک ۱۵۰۰۰۰ ریال؛ رکورد هم ریالی ذخیره می‌شود.
+    t = InMemoryTransport({ZP_REQ: {"data": {"authority": "AT"}, "errors": []}})
+    payment, _ = services.start_payment(
+        "zarinpal",
+        amount=15_000,
+        callback_url="cb",
+        order_id="OT",
+        currency="toman",
+        transport=t,
+    )
+    assert payment.amount == 150_000  # ریال (تبدیل‌شده)
+    assert payment.amount_sent == 150_000  # ریال به بانک
+    assert t.requests_log[0]["json"]["amount"] == 150_000
+
+
+@pytest.mark.django_db
 def test_start_payment_with_fee_stores_amount_sent():
     t = InMemoryTransport({ZP_REQ: {"data": {"authority": "A1"}, "errors": []}})
     fee = FeeConfig(rate_bps=200, who_pays=FeePayer.CUSTOMER)

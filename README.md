@@ -8,7 +8,9 @@
 - **لایه‌ی هسته (پیشرفته):** درگاه‌های بدون state که در هر محیطی (حتی غیر Django یا
   async) قابل استفاده‌اند. کاربر خودش `authority` را ذخیره و تأیید را مدیریت می‌کند.
 
-همه‌ی مبالغ به **ریال** هستند.
+واحد بانک همیشه **ریال** است، اما می‌توانی واحد ورودی خودت را به **تومان** تغییر
+دهی (`IRANIAN_PAYMENT["currency"] = "toman"`)؛ پکیج خودکار به ریال تبدیل می‌کند.
+بخش [واحد پول](#واحد-پول-ریال-یا-تومان) را ببین.
 
 ## درگاه‌های آماده و تست‌شده (registry عمومی)
 
@@ -103,24 +105,81 @@ pip install "django-iranian-payment[sadad]"
 
 ```python
 IRANIAN_PAYMENT = {
-    "sandbox": True,  # روی پروداکشن False
+    "sandbox": False,    # پیش‌فرض سراسری
+    "currency": "rial",  # واحد ورودی مبلغ: "rial" (پیش‌فرض) یا "toman"
     "gateways": {
-        "zarinpal": {"merchant_id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"},
-        "zibal": {"merchant": "zibal"},
+        "zarinpal": {"merchant_id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+                     "sandbox": True},   # sandbox مجزای همین درگاه
+        "zibal": {"merchant": "zibal"},  # زیبال sandbox را با merchant کنترل می‌کند
         "mellat": {
             "terminal_id": "1234567",
             "username": "your-username",
             "password": "your-password",
             "settle_mode": "verify_settle",  # یا "verify_only"
+            # بدون "sandbox" → از پیش‌فرض سراسری (False = live) پیروی می‌کند
         },
     },
 }
 ```
 
-> توجه: درگاه‌های تجربی (سامان، ایران‌کیش، ...) چون در registry نیستند با این config
-> و `get_gateway` ساخته نمی‌شوند. برای استفاده از آن‌ها باید کلاسشان را مستقیم
-> import و دستی config کنی (پس از تست واقعی). درگاه‌های registry عمومی
-> (زرین‌پال، زیبال، ملت) مستقیم با `get_gateway("slug")` در دسترس‌اند.
+### واحد پول (ریال یا تومان)
+
+بانک‌های ایرانی همیشه با **ریال** کار می‌کنند؛ این واحد بانکِ پکیج است و
+`amount_to_send` که به درگاه و verify می‌رود همیشه ریال است. اما می‌توانی واحدی که
+**خودت ورودی می‌دهی** را با `IRANIAN_PAYMENT["currency"]` به‌صورت سراسری انتخاب کنی:
+
+```python
+IRANIAN_PAYMENT = {
+    "currency": "toman",   # حالا amount ها را به تومان می‌دهی
+    "gateways": {...},
+}
+
+# با تنظیم بالا:
+services.start_payment("zarinpal", amount=15_000, ...)   # ۱۵۰۰۰ تومان → بانک ۱۵۰۰۰۰ ریال
+```
+
+- پیش‌فرض `"rial"` است (سازگار با قبل؛ هیچ تبدیلی انجام نمی‌شود).
+- تبدیل **۱ تومان = ۱۰ ریال** فقط یک‌بار و در همان ابتدای کار انجام می‌شود.
+- مبالغ ذخیره‌شده در مدل `Payment` و مقادیر بازگشتی verify **همیشه ریال‌اند** (واحد
+  بانک)؛ `currency` فقط واحد *ورودی* را تعیین می‌کند. برای نمایش به کاربر در تومان،
+  خودت بر ۱۰ تقسیم کن.
+- کارمزد: `rate_bps` واحد‌مستقل است؛ ولی `fixed` و `max_fee` در همان واحد ورودی
+  تفسیر و خودکار به ریال تبدیل می‌شوند.
+- در لایه‌ی هسته (بدون Django) واحد را روی خود درخواست بده:
+  `PaymentRequest(amount=15_000, currency="toman", ...)`. برای خواندن مقدار سراسری
+  از settings هم `from django_iranian_payment import get_default_currency` هست.
+
+### sandbox مجزای هر درگاه
+
+`sandbox` هر درگاه جداگانه تعیین می‌شود. کلید `"sandbox"` داخل config همان درگاه بر
+مقدار سراسری اولویت دارد، پس می‌توانی یک درگاه را sandbox و درگاه دیگری را live
+داشته باشی هم‌زمان. اولویت کامل:
+
+```
+get_gateway(..., sandbox=...)  >  config درگاه  >  "sandbox" سراسری  >  False
+```
+
+> فقط درگاه‌هایی که URL سندباکس جدا دارند (زرین‌پال، ملت، دیجی‌پی) به این فلگ واکنش
+> می‌دهند. زیبال با مقدار `merchant="zibal"` و سامان/ایران‌کیش/نکست‌پی/سداد اصلاً URL
+> سندباکس جدا ندارند (فلگ `sandbox` برایشان بی‌اثر است).
+
+### راهنمای کامل هر درگاه
+
+برای هر درگاه یک راهنمای گام‌به‌گام و خودکفا (هر دو حالت مدیریت دیتابیس) در
+[`docs/gateways/`](docs/gateways/README.md) هست:
+[زرین‌پال](docs/gateways/zarinpal.md) ·
+[زیبال](docs/gateways/zibal.md) ·
+[ملت](docs/gateways/mellat.md) ·
+[سامان](docs/gateways/saman.md) ·
+[ایران‌کیش](docs/gateways/irankish.md) ·
+[نکست‌پی](docs/gateways/nextpay.md) ·
+[سداد](docs/gateways/sadad.md) ·
+[دیجی‌پی](docs/gateways/digipay.md).
+
+> توجه: درگاه‌های تجربی (سامان، ایران‌کیش، ...) در registry عمومی نیستند. برای
+> استفاده‌شان با `get_gateway` و لایه‌ی Django باید یک‌بار صریحاً register شوند
+> (روش بالا را ببین). درگاه‌های registry عمومی (زرین‌پال، زیبال، ملت) به این ثبت
+> نیاز ندارند و مستقیم با `get_gateway("slug")` در دسترس‌اند.
 
 برای استفاده از لایه‌ی ساده (مدل و ردیابی خودکار)، اپ را هم اضافه کن:
 
@@ -328,6 +387,29 @@ from django_iranian_payment.core.experimental.saman import SamanGateway
 ---
 
 ## تاریخچه‌ی تغییرات درگاه‌ها
+
+- **نسخه‌ی `0.7.0`** — **انتخاب واحد پول (ریال/تومان).** کلید سراسری
+  `IRANIAN_PAYMENT["currency"]` (`"rial"` پیش‌فرض یا `"toman"`) اضافه شد. کاربر
+  می‌تواند مبلغ‌ها را به تومان بدهد و پکیج خودکار به ریال (واحد بانک) تبدیل می‌کند
+  (۱ تومان = ۱۰ ریال). تبدیل در `PaymentRequest.resolve_amount()` انجام می‌شود، پس
+  هیچ درگاهی نیاز به تغییر نداشت. در لایه‌ی هسته `PaymentRequest(currency=...)` و
+  در settings کلید `currency`. سازگار با قبل (پیش‌فرض ریال = بدون تبدیل). مبالغ
+  ذخیره/بازگشتی همیشه ریال‌اند. تست: `tests/test_currency.py`.
+
+- **نسخه‌ی `0.6.0`** — دو تغییر:
+  - **sandbox مجزای هر درگاه:** کلید `"sandbox"` داخل config هر درگاه بر مقدار
+    سراسری اولویت دارد؛ `get_gateway(..., sandbox=...)` هم اضافه شد. حالا می‌توان یک
+    درگاه را live و دیگری را sandbox داشت هم‌زمان (سازگار با قبل: فقط `sandbox`
+    سراسری مثل قبل کار می‌کند).
+  - **رفع باگ callback لایه‌ی Django برای درگاه‌های شاپرکی:** پیش‌تر view callback
+    پکیج رکورد را فقط با چند نام پارامتر محدود پیدا می‌کرد و برای نکست‌پی
+    (`trans_id`)، سداد (`Token`)، سامان (`ResNum` — توکن در callback نیست) و دیجی‌پی
+    (`providerId` — ticket در callback نیست) رکورد را نمی‌یافت و ۴۰۴ می‌داد. اکنون یک
+    جدول مشخصات (`_CALLBACK_SPEC`) در `contrib/django/views.py` برای هر درگاه نام
+    پارامتر درست و کلید پیدا کردن رکورد (authority یا order_id) را تعریف می‌کند.
+    ملت همچنان با `RefId` (authority یکتا) پیدا می‌شود تا رفتار live تست‌شده‌اش
+    دست‌نخورده بماند.
+  - راهنمای کامل هر درگاه برای هر دو حالت مدیریت دیتابیس در `docs/gateways/` افزوده شد.
 
 - **۱۴۰۵/۰۴/۰۳** (نسخه‌ی `0.5.0`) — درگاه **ملت** پس از تست تراکنش واقعی روی محیط
   عملیاتی (bpm.shaparak.ir) از `core.experimental` به registry عمومی منتقل شد و
