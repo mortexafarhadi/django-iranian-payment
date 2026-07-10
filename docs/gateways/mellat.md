@@ -1,3 +1,5 @@
+<div dir="rtl">
+
 # راهنمای اتصال درگاه ملت / به‌پرداخت (Mellat / BehPardakht)
 
 ملت درگاه پرداخت بانک ملت است و از پروتکل **SOAP** (zeep) استفاده می‌کند. در
@@ -25,15 +27,16 @@
 > `inquiry()`.
 
 ---
-
 ## نصب
+
+<div dir="ltr">
 
 ```bash
 pip install "django-iranian-payment[soap]"
 # zeep برای ارتباط SOAP نیاز است.
 ```
-
 ---
+</div>
 
 <a id="حالت-۱"></a>
 ## حالت ۱: پکیج دیتابیس را مدیریت می‌کند
@@ -42,6 +45,9 @@ pip install "django-iranian-payment[soap]"
 callback می‌خواند و به verify می‌دهد.
 
 ### قدم ۱: settings.py
+
+
+<div dir="ltr">
 
 ```python
 INSTALLED_APPS = [
@@ -76,14 +82,20 @@ IRANIAN_PAYMENT = {
     },
 }
 ```
+</div>
 
 ### قدم ۲: اجرای migration
+
+<div dir="ltr">
 
 ```bash
 python manage.py migrate
 ```
+</div>
 
 ### قدم ۳: mount کردن url های پکیج
+
+<div dir="ltr">
 
 ```python
 # project/urls.py
@@ -94,23 +106,32 @@ urlpatterns = [
     path("payment/", include("django_iranian_payment.contrib.django.urls")),
 ]
 ```
+</div>
 
 مسیرها:
+
+<div dir="ltr">
 
 ```
 GET  /payment/go/<payment_id>/        → صفحه‌ی فرم POST auto-submit به ملت
 POST /payment/callback/mellat/        → برگشت از بانک (POST)
 ```
+</div>
 
 ### قدم ۴: ثبت callBackUrl در ملت
 
 آدرس زیر را نزد ملت ثبت کن:
 
+<div dir="ltr">
+
 ```
 https://yoursite.com/payment/callback/mellat/
 ```
+</div>
 
 ### قدم ۵: view های خودت
+
+<div dir="ltr">
 
 ```python
 # yourapp/views.py
@@ -163,7 +184,11 @@ def payment_result(request):
     return HttpResponse("نتیجه نامشخص.", status=400)
 ```
 
+</div>
+
 ### قدم ۶: url های app خودت
+
+<div dir="ltr">
 
 ```python
 # yourapp/urls.py
@@ -176,9 +201,13 @@ urlpatterns = [
 ]
 ```
 
+</div>
+
 ### settle برای حالت verify_only (اختیاری)
 
 اگر `settle_mode="verify_only"` گذاشتی، بعد از verify موفق در یک task/celery:
+
+<div dir="ltr">
 
 ```python
 from django_iranian_payment import get_gateway
@@ -192,6 +221,8 @@ def settle_mellat(order_id, sale_order_id, sale_reference_id):
     )
     return result.is_success
 ```
+
+</div>
 
 `sale_order_id`/`sale_reference_id` در `payment.raw` ذخیره شده‌اند (پکیج بعد از
 verify آن‌ها را در raw می‌گذارد).
@@ -217,6 +248,8 @@ verify آن‌ها را در raw می‌گذارد).
 
 ### قدم ۱: settings.py (بدون افزودن اپ پکیج)
 
+<div dir="ltr">
+
 ```python
 IRANIAN_PAYMENT = {
     "currency": "rial",  # واحد ورودی مبلغ: "rial" (پیش‌فرض) یا "toman"
@@ -233,7 +266,11 @@ IRANIAN_PAYMENT = {
 }
 ```
 
+</div>
+
 ### قدم ۲: مدل خودت
+
+<div dir="ltr">
 
 ```python
 # yourapp/models.py
@@ -257,7 +294,11 @@ class MyPayment(models.Model):
     created_at      = models.DateTimeField(auto_now_add=True)
 ```
 
+</div>
+
 ### قدم ۳: url های خودت
+
+<div dir="ltr">
 
 ```python
 # yourapp/urls.py
@@ -270,9 +311,13 @@ urlpatterns = [
 ]
 ```
 
+</div>
+
 > `callBackUrl` ملت را به همین `ml-callback` (آدرس کامل) ثبت کن.
 
 ### قدم ۴: view شروع پرداخت + ساخت فرم POST به دست خودت
+
+<div dir="ltr">
 
 ```python
 # yourapp/views.py
@@ -332,7 +377,11 @@ def checkout(request):
     return HttpResponse(html)
 ```
 
+</div>
+
 ### قدم ۵: view بازگشت (POST)، استخراج extra و verify
+
+<div dir="ltr">
 
 ```python
 def callback(request):
@@ -380,7 +429,11 @@ def callback(request):
     return HttpResponse(f"پرداخت ناموفق: {record.error_message}")
 ```
 
+</div>
+
 ### settle / reverse در حالت verify_only (حالت ۲)
+
+<div dir="ltr">
 
 ```python
 gw = get_gateway("mellat")
@@ -396,6 +449,8 @@ gw.reverse(order_id=record.order_id,
            sale_order_id=raw["sale_order_id"],
            sale_reference_id=raw["sale_reference_id"])
 ```
+
+</div>
 
 ### نکات اختصاصی ملت در حالت ۲
 
@@ -413,3 +468,4 @@ gw.reverse(order_id=record.order_id,
 - [`scripts/django_mellat.py`](../../scripts/django_mellat.py) — کد هر دو حالت.
 - [`scripts/test_mellat.py`](../../scripts/test_mellat.py) — تست core (نیاز به IP
   ثبت‌شده نزد بانک).
+</div>

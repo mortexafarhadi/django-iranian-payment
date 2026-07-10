@@ -36,7 +36,10 @@ def test_saman_initiate_success():
     )
     assert res.authority == "TOK123"
     assert res.amount_to_send == 12_000
-    assert "TOK123" in res.redirect_url
+    # هدایت با فرم POST (روش ۲٫۱ مستند): توکن در فیلد Token، action درگاه کلاسیک.
+    assert res.redirect_method == "POST"
+    assert res.redirect_fields == {"Token": "TOK123"}
+    assert res.redirect_url == _TOKEN_URL
     # مبلغ ریالی و ResNum درست رفت
     sent = t.requests_log[0]["json"]
     assert sent["Amount"] == 12_000
@@ -76,8 +79,9 @@ def test_saman_initiate_rejected():
     assert exc.value.code == "5"
 
 
-def test_saman_initiate_neo_pg_reads_ipg_url_header():
-    # neo-pg: آدرس مرحله‌ی بعد از هدر X-IPG-Url خوانده می‌شود
+def test_saman_initiate_ignores_neo_pg_ipg_url_header():
+    # تصمیم ثبت‌شده: حتی اگر ترمینال neo-pg (بلوپی) فعال باشد و هدر X-IPG-Url
+    # بیاید، عمداً نادیده گرفته می‌شود و به درگاه کلاسیک POST می‌شود (بدون مودال).
     t = InMemoryTransport(
         {_TOKEN_URL: {"status": 1, "token": "TOK"}},
         response_headers={
@@ -85,8 +89,9 @@ def test_saman_initiate_neo_pg_reads_ipg_url_header():
         },
     )
     res = _gw(t).initiate(PaymentRequest(amount=1000, callback_url="cb", order_id="1"))
-    assert res.raw["ipg_url"] == "https://neo-pg.sep.ir/transaction/init"
-    assert "neo-pg.sep.ir" in res.redirect_url
+    assert res.redirect_url == _TOKEN_URL  # کلاسیک، نه neo-pg
+    assert "neo-pg" not in res.redirect_url
+    assert res.redirect_fields == {"Token": "TOK"}
 
 
 # ---------- verify ----------

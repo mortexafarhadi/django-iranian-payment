@@ -1,11 +1,21 @@
+<div dir="rtl">
+
 # راهنمای اتصال درگاه سامان (SEP — Saman Electronic Payment)
 
 سامان درگاه پرداخت اینترنتی بانک سامان با REST/JSON و flow مبتنی بر Token است.
 
 - **وضعیت:** ⚠️ **تجربی** — کد کامل از مستند رسمی، ولی با ترمینال/sandbox واقعی
   تست نشده. در registry عمومی نیست؛ برای استفاده باید صریحاً register شود.
-- **هدایت کاربر:** redirect ساده (GET) به `.../SendToken?token=<token>`. (مستند بانک
-  فرم POST توصیه می‌کند؛ اگر بانک به GET ایراد گرفت مثل ملت فرم POST بساز.)
+- **هدایت کاربر:** **فرم POST** (فیلد `Token`) به درگاه کلاسیک `OnlinePG/OnlinePG`
+  (`result.redirect_method == "POST"`، `result.redirect_fields == {"Token": ...}`).
+  مستند بانک صریح است: هدایت باید از طریق فرم/لینکِ سایت پذیرنده باشد تا مرورگر
+  هدر `Referrer` را بفرستد، وگرنه ورود به درگاه ممکن نیست. در حالت پکیج، view
+  `go_to_gateway` این فرم را خودکار می‌سازد؛ در حالت خودمدیریت، خودت می‌سازی.
+- **بلوپی (neo-pg):** اگر ترمینال بلوپی فعال داشته باشد، سامان هدر `X-IPG-Url`
+  می‌دهد و مودال «درگاه اینترنتی / بلوپی» نشان می‌دهد. این پکیج **عمداً** آن هدر را
+  نادیده می‌گیرد و همیشه به درگاه کلاسیک POST می‌کند تا مستقیم صفحه‌ی کارت باز شود
+  (بدون مودال). اگر درگاه کلاسیک توکن ترمینالی را نپذیرد، از واحد کسب‌وکار سامان
+  بخواه بلوپی را روی آن ترمینال غیرفعال کنند.
 - **callback:** POST با فیلدهای `State`، `Status`، `RefNum`، `ResNum`، `RRN`.
 - **sandbox:** ⚠️ URL سندباکس جدا ندارد؛ فلگ `sandbox` بی‌اثر است. تست با ترمینال
   واقعی روی همان آدرس عملیاتی.
@@ -25,9 +35,12 @@
 
 ## نصب
 
+<div dir="ltr">
+
 ```bash
 pip install django-iranian-payment
 ```
+</div>
 
 ---
 
@@ -35,6 +48,8 @@ pip install django-iranian-payment
 ## حالت ۱: پکیج دیتابیس را مدیریت می‌کند
 
 ### قدم ۱: settings.py
+
+<div dir="ltr">
 
 ```python
 INSTALLED_APPS = [
@@ -49,16 +64,18 @@ IRANIAN_PAYMENT = {
     "gateways": {
         "saman": {
             "terminal_id": "123456789",   # شماره ترمینال از پرداخت الکترونیک سامان
-            # اختیاری برای neo-pg: "redirect_url": "https://sep.shaparak.ir/OnlinePG/SendToken"
             # ⚠️ کلید "sandbox" برای سامان بی‌اثر است (URL سندباکس جدا ندارد).
         },
     },
 }
 ```
+</div>
 
 ### قدم ۲: ثبت درگاه تجربی در registry
 
 چون سامان در registry عمومی نیست، آن را در `AppConfig.ready` ثبت کن:
+
+<div dir="ltr">
 
 ```python
 # yourapp/apps.py
@@ -73,12 +90,18 @@ class YourAppConfig(AppConfig):
         from django_iranian_payment.core.experimental.saman import SamanGateway
         _REGISTRY.setdefault("saman", SamanGateway)
 ```
+</div>
 
 ### قدم ۳: migration و url ها
+
+<div dir="ltr">
 
 ```bash
 python manage.py migrate
 ```
+</div>
+
+<div dir="ltr">
 
 ```python
 # project/urls.py
@@ -89,15 +112,21 @@ urlpatterns = [
     path("payment/", include("django_iranian_payment.contrib.django.urls")),
 ]
 ```
+</div>
 
 مسیرها:
 
+<div dir="ltr">
+
 ```
-GET  /payment/go/<payment_id>/      → هدایت به درگاه (GET)
+GET  /payment/go/<payment_id>/      → هدایت به درگاه (فرم POST auto-submit)
 POST /payment/callback/saman/       → برگشت از بانک (POST)
 ```
+</div>
 
 ### قدم ۴: view های خودت
+
+<div dir="ltr">
 
 ```python
 # yourapp/views.py
@@ -127,7 +156,11 @@ def checkout(request):
     except GatewayError as e:
         return HttpResponse(f"خطا در اتصال به سامان: {e}", status=502)
 
-    return HttpResponseRedirect(redirect_url)
+    # سامان هدایت با فرم POST می‌خواهد → به view go_to_gateway بفرست (فرم
+    # auto-submit می‌سازد و Referrer را می‌فرستد). redirect_url را مستقیم GET نکن.
+    return HttpResponseRedirect(
+        reverse("iranian_payment:go-to-gateway", kwargs={"payment_id": payment.id})
+    )
 
 
 def payment_result(request):
@@ -143,11 +176,12 @@ def payment_result(request):
         return HttpResponse("پرداخت ناموفق.")
     return HttpResponse("نتیجه نامشخص.", status=400)
 ```
+</div>
 
 ### جریان کامل حالت ۱
 
 1. `checkout` → `start_payment` رکورد با `authority`(=token) و `amount_sent` ذخیره
-   می‌کند → کاربر به سامان می‌رود.
+   می‌کند → کاربر به `go_to_gateway` می‌رود که فرم POST auto-submit به سامان می‌سازد.
 2. کاربر پرداخت می‌کند → سامان با **POST** به `/payment/callback/saman/` برمی‌گردد
    (State, Status, RefNum, ResNum, ...).
 3. view callback پکیج رکورد را با `ResNum`(==order_id) پیدا می‌کند، `RefNum`/`State`
@@ -160,6 +194,8 @@ def payment_result(request):
 
 ### قدم ۱: settings.py (بدون افزودن اپ پکیج)
 
+<div dir="ltr">
+
 ```python
 IRANIAN_PAYMENT = {
     "currency": "rial",  # واحد ورودی مبلغ: "rial" (پیش‌فرض) یا "toman"
@@ -169,8 +205,11 @@ IRANIAN_PAYMENT = {
     },
 }
 ```
+</div>
 
 ### قدم ۲: ثبت درگاه تجربی
+
+<div dir="ltr">
 
 ```python
 # yourapp/apps.py
@@ -185,8 +224,11 @@ class YourAppConfig(AppConfig):
         from django_iranian_payment.core.experimental.saman import SamanGateway
         _REGISTRY.setdefault("saman", SamanGateway)
 ```
+</div>
 
 ### قدم ۳: مدل خودت
+
+<div dir="ltr">
 
 ```python
 # yourapp/models.py
@@ -206,8 +248,11 @@ class MyPayment(models.Model):
     callback_url = models.URLField(max_length=500)
     created_at   = models.DateTimeField(auto_now_add=True)
 ```
+</div>
 
 ### قدم ۴: url های خودت
+
+<div dir="ltr">
 
 ```python
 # yourapp/urls.py
@@ -219,13 +264,17 @@ urlpatterns = [
     path("pay/callback/saman/", views.callback, name="sm-callback"),
 ]
 ```
+</div>
 
 ### قدم ۵: view شروع پرداخت
 
+<div dir="ltr">
+
 ```python
 # yourapp/views.py
-from django.http import HttpResponse, HttpResponseRedirect
+from django.http import HttpResponse
 from django.urls import reverse
+from django.utils.html import escape
 
 from django_iranian_payment import get_gateway
 from django_iranian_payment.core.models import PaymentRequest
@@ -261,10 +310,25 @@ def checkout(request):
     record.amount_sent = result.amount_to_send  # مرجع یکتا برای verify
     record.status = "redirect"
     record.save()
-    return HttpResponseRedirect(result.redirect_url)
+
+    # سامان POST می‌خواهد → فرم auto-submit بساز (action همان درگاه کلاسیک است).
+    inputs = "".join(
+        f'<input type="hidden" name="{escape(k)}" value="{escape(str(v))}">'
+        for k, v in (result.redirect_fields or {}).items()   # {"Token": ...}
+    )
+    return HttpResponse(
+        "<!doctype html><html><head><meta charset='utf-8'></head>"
+        "<body onload='document.forms[0].submit()'>در حال انتقال به درگاه سامان…"
+        f"<form method='post' action='{escape(result.redirect_url)}'>{inputs}"
+        "<noscript><button type='submit'>ادامه</button></noscript>"
+        "</form></body></html>"
+    )
 ```
+</div>
 
 ### قدم ۶: view بازگشت (POST) و verify با RefNum
+
+<div dir="ltr">
 
 ```python
 def callback(request):
@@ -300,17 +364,22 @@ def callback(request):
     record.save()
     return HttpResponse(f"پرداخت ناموفق: {record.error_message}")
 ```
+</div>
 
 ### برگشت وجه (reverse)
+
+<div dir="ltr">
 
 ```python
 gw = get_gateway("saman")
 result = gw.reverse(ref_num="RN50")   # RefNum همان تراکنش
 ```
+</div>
 
 ### نکات اختصاصی سامان در حالت ۲
 
-- **هدایت:** GET ساده.
+- **هدایت:** فرم POST auto-submit با فیلد `Token` به `result.redirect_url` (درگاه
+  کلاسیک) — نه GET ساده و نه neo-pg. Referrer باید از فرمِ سایت خودت برود.
 - **پیدا کردن رکورد:** با `order_id`(==`ResNum`) — چون توکن در callback نیست.
 - **`extra`:** ضروری — `ref_num`(==`RefNum`) و `state`. verify با `RefNum` انجام
   می‌شود نه توکن.
@@ -323,3 +392,4 @@ result = gw.reverse(ref_num="RN50")   # RefNum همان تراکنش
 
 - [`scripts/django_saman.py`](../../scripts/django_saman.py) — کد هر دو حالت.
 - [`scripts/test_saman.py`](../../scripts/test_saman.py) — تست با ترمینال واقعی + IP ثبت‌شده.
+</div>

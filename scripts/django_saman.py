@@ -26,8 +26,6 @@
         "gateways": {
             "saman": {
                 "terminal_id": "123456789",  # شماره ترمینال از پرداخت الکترونیک سامان
-                # اختیاری: "redirect_url" برای neo-pg (X-IPG-Url header)
-                # "redirect_url": "https://sep.shaparak.ir/OnlinePG/SendToken",
                 # ⚠️ ویژه‌ی سامان: URL سندباکس جدا ندارد؛ فلگ "sandbox" برای سامان
                 # بی‌اثر است. تست با ترمینال واقعی روی همان آدرس عملیاتی انجام می‌شود.
             },
@@ -62,9 +60,15 @@
 
 ━━ نکات مهم سامان ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  • مرحله‌ی ۱ (initiate) یک Token برمی‌گرداند، نه URL آماده.
-    redirect_url ساخته‌شده شکل: .../SendToken?token=<token>
-    کاربر با GET redirect ساده می‌رود (نیازی به POST form نیست).
+  • مرحله‌ی ۱ (initiate) یک Token برمی‌گرداند، نه URL آماده. هدایت به درگاه
+    طبق مستند با **فرم POST** (فیلد Token) به درگاه کلاسیک OnlinePG انجام می‌شود
+    (result.redirect_method == "POST" و result.redirect_fields == {"Token": ...}).
+    چرا GET نه؟ مستند صریح است: هدایت باید از طریق فرم/لینکِ سایت پذیرنده باشد تا
+    مرورگر Referrer بفرستد، وگرنه ورود به درگاه ممکن نیست. در حالت پکیج، view
+    go_to_gateway این فرم auto-submit را خودکار می‌سازد.
+  • ⚠️ عمداً به درگاه کلاسیک POST می‌شود، نه neo-pg/بلوپی. اگر ترمینال بلوپی فعال
+    داشته باشد، سامان هدر X-IPG-Url می‌دهد که مودال «درگاه اینترنتی/بلوپی» نشان
+    می‌دهد؛ این پکیج آن را نادیده می‌گیرد تا مستقیم صفحه‌ی کارت باز شود.
   • callback با POST برمی‌گردد. پکیج RefNum و State را از POST استخراج می‌کند.
   • verify به RefNum نیاز دارد (نه Token). پکیج آن را از extra می‌گیرد.
   • ثبت IP سرور: بدون آن، در دریافت Token کد ۸ می‌گیری.
@@ -82,7 +86,8 @@ from django_iranian_payment.core.exceptions import GatewayError
 def checkout(request):
     """
     شروع پرداخت با سامان.
-    initiate یک Token برمی‌گرداند؛ redirect_url را برای هدایت کاربر استفاده کن.
+    سامان هدایت با فرم POST می‌خواهد؛ کاربر را به view go_to_gateway بفرست تا
+    پکیج فرم auto-submit را بسازد (مثل ملت). redirect_url مستقیم GET نکن.
     """
     order_id = "SAMAN-ORDER-001"  # ResNum — شناسه‌ی سفارش
     amount = 300_000  # ریال
@@ -105,8 +110,11 @@ def checkout(request):
 
     request.session["pending_payment_id"] = payment.id
 
-    # کاربر را به درگاه سامان هدایت کن (GET redirect ساده)
-    return HttpResponseRedirect(redirect_url)
+    # کاربر را به view go_to_gateway بفرست — این view فرم POST auto-submit می‌سازد
+    # (Referrer را می‌فرستد و مودال neo-pg را دور می‌زند).
+    return HttpResponseRedirect(
+        reverse("iranian_payment:go-to-gateway", kwargs={"payment_id": payment.id})
+    )
 
 
 def payment_result(request):
@@ -153,7 +161,10 @@ def payment_result(request):
 # حالت ۱ (پکیج DB را مدیریت می‌کند): همان checkout/payment_result بالا.
 #
 # حالت ۲ (خودت DB را مدیریت می‌کنی): کد زیر. مشخصات سامان در این حالت:
-#   • هدایت: GET ساده به redirect_url (مستند POST توصیه می‌کند ولی پیاده‌سازی GET).
+#   • هدایت: فرم POST (نه redirect ساده). result.redirect_method == "POST" و
+#     result.redirect_fields == {"Token": ...}. در حالت ۲ template پکیج در دسترس
+#     نیست، پس فرم auto-submit را خودت می‌سازی (پایین). action همان
+#     result.redirect_url (درگاه کلاسیک) است — نه neo-pg.
 #   • callback: POST — سامان State, Status, RefNum, ResNum, RRN می‌فرستد.
 #   • ⚠️ مهم: callback توکن (authority) را برنمی‌گرداند! رکوردت را با
 #     order_id(==ResNum که خودت فرستادی) پیدا کن، نه با authority.
@@ -163,12 +174,14 @@ def payment_result(request):
 #   • amount در verify باید amount_sent ذخیره‌شده باشد، نه مبلغ پایه.
 # مدل نمونه‌ی MyPayment و توضیح کامل در scripts/django_custom_db.py است.
 
+from django.utils.html import escape
+
 from django_iranian_payment import get_gateway
 from django_iranian_payment.core.models import PaymentRequest
 
 
 def checkout_self_managed(request):
-    """حالت ۲ سامان — شروع پرداخت با مدل خودت (MyPayment)."""
+    """حالت ۲ سامان — شروع پرداخت با مدل خودت (MyPayment) و فرم POST auto-submit."""
     from yourapp.models import MyPayment
 
     order_id = "SAMAN-ORDER-001"  # همین به‌عنوان ResNum می‌رود و در callback برمی‌گردد
@@ -200,7 +213,20 @@ def checkout_self_managed(request):
     record.amount_sent = result.amount_to_send
     record.status = "redirect"
     record.save()
-    return HttpResponseRedirect(result.redirect_url)
+
+    # سامان POST می‌خواهد → فرم auto-submit بساز (در حالت ۲ template پکیج نیست).
+    inputs = "".join(
+        f'<input type="hidden" name="{escape(k)}" value="{escape(str(v))}">'
+        for k, v in (result.redirect_fields or {}).items()
+    )
+    html = (
+        "<!doctype html><html><head><meta charset='utf-8'></head>"
+        "<body onload='document.forms[0].submit()'>در حال انتقال به درگاه سامان…"
+        f"<form method='post' action='{escape(result.redirect_url)}'>{inputs}"
+        "<noscript><button type='submit'>ادامه</button></noscript>"
+        "</form></body></html>"
+    )
+    return HttpResponse(html)
 
 
 def callback_self_managed(request):

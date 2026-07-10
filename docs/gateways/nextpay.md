@@ -1,3 +1,5 @@
+<div dir="rtl">
+
 # راهنمای اتصال درگاه نکست‌پی (NextPay)
 
 نکست‌پی درگاه پرداخت اینترنتی با REST/JSON است، محبوب برای SMEها و استارت‌آپ‌ها.
@@ -22,9 +24,12 @@
 
 ## نصب
 
+<div dir="ltr">
+
 ```bash
 pip install django-iranian-payment
 ```
+</div>
 
 ---
 
@@ -32,6 +37,8 @@ pip install django-iranian-payment
 ## حالت ۱: پکیج دیتابیس را مدیریت می‌کند
 
 ### قدم ۱: settings.py
+
+<div dir="ltr">
 
 ```python
 INSTALLED_APPS = [
@@ -51,8 +58,11 @@ IRANIAN_PAYMENT = {
     },
 }
 ```
+</div>
 
 ### قدم ۲: ثبت درگاه تجربی
+
+<div dir="ltr">
 
 ```python
 # yourapp/apps.py
@@ -67,12 +77,18 @@ class YourAppConfig(AppConfig):
         from django_iranian_payment.core.experimental.nextpay import NextPayGateway
         _REGISTRY.setdefault("nextpay", NextPayGateway)
 ```
+</div>
 
 ### قدم ۳: migration و url ها
+
+<div dir="ltr">
 
 ```bash
 python manage.py migrate
 ```
+</div>
+
+<div dir="ltr">
 
 ```python
 # project/urls.py
@@ -82,15 +98,21 @@ urlpatterns = [
     path("payment/", include("django_iranian_payment.contrib.django.urls")),
 ]
 ```
+</div>
 
 مسیرها:
+
+<div dir="ltr">
 
 ```
 GET  /payment/go/<payment_id>/      → هدایت به درگاه
 GET  /payment/callback/nextpay/     → برگشت از بانک (GET)
 ```
+</div>
 
 ### قدم ۴: view های خودت
+
+<div dir="ltr">
 
 ```python
 # yourapp/views.py
@@ -137,6 +159,7 @@ def payment_result(request):
         return HttpResponse("پرداخت ناموفق.")
     return HttpResponse("نتیجه نامشخص.", status=400)
 ```
+</div>
 
 ### جریان کامل حالت ۱
 
@@ -153,6 +176,8 @@ def payment_result(request):
 
 ### قدم ۱: settings.py (بدون افزودن اپ پکیج)
 
+<div dir="ltr">
+
 ```python
 IRANIAN_PAYMENT = {
     "currency": "rial",  # واحد ورودی مبلغ: "rial" (پیش‌فرض) یا "toman"
@@ -162,8 +187,11 @@ IRANIAN_PAYMENT = {
     },
 }
 ```
+</div>
 
 ### قدم ۲: ثبت درگاه تجربی
+
+<div dir="ltr">
 
 ```python
 # yourapp/apps.py
@@ -178,8 +206,11 @@ class YourAppConfig(AppConfig):
         from django_iranian_payment.core.experimental.nextpay import NextPayGateway
         _REGISTRY.setdefault("nextpay", NextPayGateway)
 ```
+</div>
 
 ### قدم ۳: مدل خودت
+
+<div dir="ltr">
 
 ```python
 # yourapp/models.py
@@ -199,8 +230,11 @@ class MyPayment(models.Model):
     callback_url = models.URLField(max_length=500)
     created_at   = models.DateTimeField(auto_now_add=True)
 ```
+</div>
 
 ### قدم ۴: url های خودت
+
+<div dir="ltr">
 
 ```python
 # yourapp/urls.py
@@ -212,8 +246,11 @@ urlpatterns = [
     path("pay/callback/nextpay/", views.callback, name="np-callback"),
 ]
 ```
+</div>
 
 ### قدم ۵: view شروع پرداخت
+
+<div dir="ltr">
 
 ```python
 # yourapp/views.py
@@ -256,8 +293,11 @@ def checkout(request):
     record.save()
     return HttpResponseRedirect(result.redirect_url)
 ```
+</div>
 
 ### قدم ۶: view بازگشت (GET) و verify
+
+<div dir="ltr">
 
 ```python
 def callback(request):
@@ -293,13 +333,17 @@ def callback(request):
     record.save()
     return HttpResponse(f"پرداخت ناموفق: {record.error_message}")
 ```
+</div>
 
 ### استرداد وجه (refund)
+
+<div dir="ltr">
 
 ```python
 gw = get_gateway("nextpay")
 result = gw.refund(trans_id="TRANS9", amount=180_000)
 ```
+</div>
 
 ### نکات اختصاصی نکست‌پی در حالت ۲
 
@@ -314,3 +358,4 @@ result = gw.refund(trans_id="TRANS9", amount=180_000)
 
 - [`scripts/django_nextpay.py`](../../scripts/django_nextpay.py) — کد هر دو حالت.
 - [`scripts/test_nextpay.py`](../../scripts/test_nextpay.py) — تست با api_key واقعی.
+</div>

@@ -12,8 +12,13 @@ MerchantIpAddressIsInvalid در زمان دریافت توکن).
 
 روند کامل (طبق مستند):
 1. initiate → action=token: یک توکن می‌گیریم. خروجی موفق {"status":1,"token":...}.
-   کاربر باید با POST فرم (فیلد Token) یا redirect GET به صفحه‌ی پرداخت برود
-   (لایه‌ی Django فرم auto-submit می‌سازد). redirect_url مقصد است.
+   هدایت به صفحه‌ی پرداخت طبق روش ۲٫۱ مستند: یک فرم auto-submit با متد POST و
+   فیلد مخفی `Token` به آدرس درگاه کلاسیک `OnlinePG/OnlinePG` ارسال می‌شود
+   (لایه‌ی Django این فرم را می‌سازد؛ redirect_method="POST" و
+   redirect_fields={"Token": token}). چرا فرم POST نه redirect GET؟ مستند
+   (صفحه ۱۰) صریح است: هدایت حتماً باید از طریق فرم/لینکِ سایت پذیرنده باشد تا
+   مرورگر هدر Referrer را بفرستد، وگرنه «امکان ورود به درگاه پرداخت وجود نخواهد
+   داشت». یک redirect 302 سمت‌سرور این Referrer را مطمئن نمی‌فرستد.
 2. بازگشت از بانک (callback POST): سامان State/Status/RefNum/ResNum/RRN/... را
    POST می‌کند. RefNum و State برای verify لازم‌اند (در extra پاس داده می‌شوند).
 3. verify → VerifyTransaction با RefNum و TerminalNumber.
@@ -28,12 +33,20 @@ MerchantIpAddressIsInvalid در زمان دریافت توکن).
 - بازگشت موفق verify: Success=true و ResultCode=0 و OrginalAmount باید با
   مبلغ ارسالی اولیه تطبیق داشته باشد (نکته ۲ مستند). تطبیق مبلغ اینجا انجام
   می‌شود؛ عدم تطبیق → FAILED با کد amount_mismatch.
-- neo-pg (سند بلوپی): اگر هدر X-IPG-Url در پاسخ توکن بیاید، مرحله‌ی بعد به آن
-  آدرس می‌رود. اینجا redirect_url بر همان مبنا ساخته می‌شود.
+
+⚠️ neo-pg / بلوپی (BluPay): اگر ترمینالِ پذیرنده neo-pg فعال داشته باشد، سامان
+هدر X-IPG-Url (مثل https://neo-pg.sep.ir/transaction/init) را در پاسخ توکن
+می‌فرستد و انتظار دارد توکن به همان آدرس POST شود — که آن‌جا یک مودال انتخاب
+«درگاه اینترنتی / بلوپی» نمایش می‌دهد. این پیاده‌سازی **عمداً X-IPG-Url را
+نادیده می‌گیرد** و همیشه به درگاه کلاسیک (`OnlinePG/OnlinePG`، ورود مستقیم کارت،
+بدون مودال) POST می‌کند — رفتاری که کاربر خواسته و اکثر سایت‌ها دارند. اگر
+ترمینالی اجباراً به neo-pg مسیردهی شده باشد و درگاه کلاسیک توکن را نپذیرد
+(TokenNotFound)، باید از واحد کسب‌وکار نوین سامان خواست بلوپی را روی ترمینال
+غیرفعال کنند.
 """
 
 from ..base import BaseGateway
-from ..exceptions import GatewayConnectionError, GatewayPaymentError
+from ..exceptions import GatewayPaymentError
 from ..models import (
     InitiateResult,
     PaymentRequest,
@@ -41,8 +54,8 @@ from ..models import (
     PaymentStatus,
 )
 
+# آدرس درگاه کلاسیک: هم endpointِ درخواست توکن است، هم action فرمِ هدایت (POST).
 _TOKEN_URL = "https://sep.shaparak.ir/OnlinePG/OnlinePG"
-_SENDTOKEN_URL = "https://sep.shaparak.ir/OnlinePG/SendToken"
 _VERIFY_URL = "https://sep.shaparak.ir/verifyTxnRandomSessionkey/ipg/VerifyTransaction"
 _REVERSE_URL = (
     "https://sep.shaparak.ir/verifyTxnRandomSessionkey/ipg/ReverseTransaction"
@@ -62,8 +75,7 @@ class SamanGateway(BaseGateway):
 
     @property
     def _token_url(self):
-        # neo-pg آدرس پایه را در هدر X-IPG-Url می‌دهد؛ آن مسیر در initiate
-        # مدیریت می‌شود. این مقدار پیش‌فرض برای IPG عمومی است.
+        # هم endpointِ درخواست توکن است، هم action فرمِ هدایت POST (درگاه کلاسیک).
         return self.config.get("token_url", _TOKEN_URL)
 
     @property
@@ -73,9 +85,6 @@ class SamanGateway(BaseGateway):
     @property
     def _reverse_url(self):
         return self.config.get("reverse_url", _REVERSE_URL)
-
-    def _supports_headers(self):
-        return hasattr(self.transport, "post_with_headers")
 
     # ---------- initiate ----------
 
@@ -97,24 +106,7 @@ class SamanGateway(BaseGateway):
             payload["TokenExpiryInMin"] = int(token_expiry)
 
         headers = {"Content-Type": "application/json"}
-
-        # neo-pg: اگر transport هدر می‌دهد، X-IPG-Url را برای ساخت مقصد بخوان.
-        ipg_url = None
-        if self._supports_headers():
-            try:
-                result, resp_headers = self.transport.post_with_headers(
-                    self._token_url,
-                    json=payload,
-                    headers=headers,
-                    timeout=self.timeout,
-                )
-            except GatewayConnectionError as e:
-                if e.gateway is None:
-                    e.gateway = self.slug
-                raise
-            ipg_url = resp_headers.get("X-IPG-Url") or resp_headers.get("x-ipg-url")
-        else:
-            result = self._post(self._token_url, json=payload, headers=headers)
+        result = self._post(self._token_url, json=payload, headers=headers)
 
         status = result.get("status")
         if status != 1:
@@ -127,24 +119,20 @@ class SamanGateway(BaseGateway):
             )
 
         token = result.get("token")
-        # هدایت: فرم POST با فیلد Token به آدرس پرداخت توصیه‌ی مستند است؛ ولی
-        # redirect_url قابل‌استفاده‌ی ساده (GET) را هم می‌دهیم. لایه‌ی Django
-        # بهتر است فرم POST بسازد تا Referrer هم ارسال شود (الزام مستند).
-        base = (
-            ipg_url.rsplit("/", 1)[0] if ipg_url else _SENDTOKEN_URL.rsplit("/", 1)[0]
-        )
-        redirect_url = f"{base}/SendToken?token={token}"
-
+        # هدایت طبق روش ۲٫۱ مستند: فرم auto-submit با متد POST و فیلد `Token` به
+        # آدرس درگاه کلاسیک. این تنها روشی است که Referrer را می‌فرستد (الزام
+        # مستند) و مودال neo-pg/بلوپی را دور می‌زند. X-IPG-Url عمداً خوانده نمی‌شود.
         return InitiateResult(
-            redirect_url=redirect_url,
+            redirect_url=self._token_url,
+            redirect_method="POST",
+            redirect_fields={"Token": token},
             authority=token,
             amount_to_send=amount_to_send,
             fee=fee_result.fee,
             raw={
                 "result": result,
                 "token": token,
-                "post_to": ipg_url or self._token_url,
-                "ipg_url": ipg_url,
+                "post_to": self._token_url,
             },
         )
 

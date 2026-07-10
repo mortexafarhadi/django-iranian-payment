@@ -1,3 +1,5 @@
+<div dir="rtl">
+
 # راهنمای اتصال درگاه دیجی‌پی (DigiPay)
 
 دیجی‌پی درگاه پرداخت دیجی‌کالا است. برای احراز هویت از **OAuth2** و برای پرداخت از
@@ -28,9 +30,12 @@ REST/JSON استفاده می‌کند.
 
 ## نصب
 
+<div dir="ltr">
+
 ```bash
 pip install django-iranian-payment
 ```
+</div>
 
 ---
 
@@ -38,6 +43,8 @@ pip install django-iranian-payment
 ## حالت ۱: پکیج دیتابیس را مدیریت می‌کند
 
 ### قدم ۱: settings.py
+
+<div dir="ltr">
 
 ```python
 INSTALLED_APPS = [
@@ -62,8 +69,11 @@ IRANIAN_PAYMENT = {
     },
 }
 ```
+</div>
 
 ### قدم ۲: ثبت درگاه تجربی
+
+<div dir="ltr">
 
 ```python
 # yourapp/apps.py
@@ -78,12 +88,18 @@ class YourAppConfig(AppConfig):
         from django_iranian_payment.core.experimental.digipay import DigipayGateway
         _REGISTRY.setdefault("digipay", DigipayGateway)
 ```
+</div>
 
 ### قدم ۳: migration و url ها
+
+<div dir="ltr">
 
 ```bash
 python manage.py migrate
 ```
+</div>
+
+<div dir="ltr">
 
 ```python
 # project/urls.py
@@ -93,15 +109,21 @@ urlpatterns = [
     path("payment/", include("django_iranian_payment.contrib.django.urls")),
 ]
 ```
+</div>
 
 مسیرها:
+
+<div dir="ltr">
 
 ```
 GET      /payment/go/<payment_id>/      → هدایت به درگاه
 GET|POST /payment/callback/digipay/     → برگشت از بانک
 ```
+</div>
 
 ### قدم ۴: view های خودت
+
+<div dir="ltr">
 
 ```python
 # yourapp/views.py
@@ -148,6 +170,7 @@ def payment_result(request):
         return HttpResponse("پرداخت ناموفق.")
     return HttpResponse("نتیجه نامشخص.", status=400)
 ```
+</div>
 
 ### جریان کامل حالت ۱
 
@@ -165,6 +188,8 @@ def payment_result(request):
 
 ### قدم ۱: settings.py (بدون افزودن اپ پکیج)
 
+<div dir="ltr">
+
 ```python
 IRANIAN_PAYMENT = {
     "currency": "rial",  # واحد ورودی مبلغ: "rial" (پیش‌فرض) یا "toman"
@@ -181,8 +206,11 @@ IRANIAN_PAYMENT = {
     },
 }
 ```
+</div>
 
 ### قدم ۲: ثبت درگاه تجربی
+
+<div dir="ltr">
 
 ```python
 # yourapp/apps.py
@@ -197,8 +225,11 @@ class YourAppConfig(AppConfig):
         from django_iranian_payment.core.experimental.digipay import DigipayGateway
         _REGISTRY.setdefault("digipay", DigipayGateway)
 ```
+</div>
 
 ### قدم ۳: مدل خودت
+
+<div dir="ltr">
 
 ```python
 # yourapp/models.py
@@ -218,8 +249,11 @@ class MyPayment(models.Model):
     callback_url = models.URLField(max_length=500)
     created_at   = models.DateTimeField(auto_now_add=True)
 ```
+</div>
 
 ### قدم ۴: url های خودت
+
+<div dir="ltr">
 
 ```python
 # yourapp/urls.py
@@ -231,8 +265,11 @@ urlpatterns = [
     path("pay/callback/digipay/", views.callback, name="dp-callback"),
 ]
 ```
+</div>
 
 ### قدم ۵: view شروع پرداخت
+
+<div dir="ltr">
 
 ```python
 # yourapp/views.py
@@ -275,8 +312,11 @@ def checkout(request):
     record.save()
     return HttpResponseRedirect(result.redirect_url)
 ```
+</div>
 
 ### قدم ۶: view بازگشت و verify با trackingCode
+
+<div dir="ltr">
 
 ```python
 def callback(request):
@@ -316,6 +356,7 @@ def callback(request):
     record.save()
     return HttpResponse(f"پرداخت ناموفق: {record.error_message}")
 ```
+</div>
 
 ### نکات اختصاصی دیجی‌پی در حالت ۲
 
@@ -330,3 +371,4 @@ def callback(request):
 
 - [`scripts/django_digipay.py`](../../scripts/django_digipay.py) — کد هر دو حالت.
 - [`scripts/test_digipay.py`](../../scripts/test_digipay.py) — تست با اعتبارنامه‌ی کامل.
+</div>

@@ -1,3 +1,5 @@
+<div dir="rtl">
+
 # راهنمای اتصال درگاه زیبال (Zibal)
 
 زیبال درگاه پرداخت اینترنتی ایرانی با REST/JSON است. در **registry عمومی** پکیج
@@ -18,9 +20,12 @@
 
 ## نصب
 
+<div dir="ltr">
+
 ```bash
 pip install django-iranian-payment
 ```
+</div>
 
 ---
 
@@ -28,6 +33,8 @@ pip install django-iranian-payment
 ## حالت ۱: پکیج دیتابیس را مدیریت می‌کند
 
 ### قدم ۱: settings.py
+
+<div dir="ltr">
 
 ```python
 INSTALLED_APPS = [
@@ -49,14 +56,20 @@ IRANIAN_PAYMENT = {
     },
 }
 ```
+</div>
 
 ### قدم ۲: اجرای migration
+
+<div dir="ltr">
 
 ```bash
 python manage.py migrate
 ```
+</div>
 
 ### قدم ۳: mount کردن url های پکیج
+
+<div dir="ltr">
 
 ```python
 # project/urls.py
@@ -67,15 +80,21 @@ urlpatterns = [
     path("payment/", include("django_iranian_payment.contrib.django.urls")),
 ]
 ```
+</div>
 
 مسیرها:
+
+<div dir="ltr">
 
 ```
 GET  /payment/go/<payment_id>/      → هدایت کاربر به درگاه
 GET  /payment/callback/zibal/       → برگشت از بانک (?trackId=...&success=1)
 ```
+</div>
 
 ### قدم ۴: view های خودت
+
+<div dir="ltr">
 
 ```python
 # yourapp/views.py
@@ -122,8 +141,11 @@ def payment_result(request):
         return HttpResponse("پرداخت ناموفق.")
     return HttpResponse("نتیجه نامشخص.", status=400)
 ```
+</div>
 
 ### قدم ۵: url های app خودت
+
+<div dir="ltr">
 
 ```python
 # yourapp/urls.py
@@ -135,6 +157,7 @@ urlpatterns = [
     path("payment/result/", views.payment_result, name="payment-result"),
 ]
 ```
+</div>
 
 ### جریان کامل حالت ۱
 
@@ -152,6 +175,8 @@ urlpatterns = [
 
 ### قدم ۱: settings.py (بدون افزودن اپ پکیج)
 
+<div dir="ltr">
+
 ```python
 IRANIAN_PAYMENT = {
     "currency": "rial",  # واحد ورودی مبلغ: "rial" (پیش‌فرض) یا "toman"
@@ -161,8 +186,11 @@ IRANIAN_PAYMENT = {
     },
 }
 ```
+</div>
 
 ### قدم ۲: مدل خودت
+
+<div dir="ltr">
 
 ```python
 # yourapp/models.py
@@ -182,10 +210,13 @@ class MyPayment(models.Model):
     callback_url = models.URLField(max_length=500)
     created_at   = models.DateTimeField(auto_now_add=True)
 ```
+</div>
 
 سپس `makemigrations` و `migrate`.
 
 ### قدم ۳: url های خودت
+
+<div dir="ltr">
 
 ```python
 # yourapp/urls.py
@@ -197,8 +228,11 @@ urlpatterns = [
     path("pay/callback/zibal/", views.callback, name="zb-callback"),
 ]
 ```
+</div>
 
 ### قدم ۴: view شروع پرداخت
+
+<div dir="ltr">
 
 ```python
 # yourapp/views.py
@@ -241,8 +275,11 @@ def checkout(request):
     record.save()
     return HttpResponseRedirect(result.redirect_url)
 ```
+</div>
 
 ### قدم ۵: view بازگشت و verify
+
+<div dir="ltr">
 
 ```python
 def callback(request):
@@ -276,6 +313,7 @@ def callback(request):
     record.save()
     return HttpResponse(f"پرداخت ناموفق: {record.error_message}")
 ```
+</div>
 
 ### نکات اختصاصی زیبال در حالت ۲
 
@@ -290,3 +328,4 @@ def callback(request):
 
 - [`scripts/django_zibal.py`](../../scripts/django_zibal.py) — کد هر دو حالت.
 - [`scripts/test_zibal.py`](../../scripts/test_zibal.py) — تست sandbox با `merchant="zibal"`.
+</div>

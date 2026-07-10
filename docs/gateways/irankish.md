@@ -1,3 +1,5 @@
+<div dir="rtl">
+
 # راهنمای اتصال درگاه ایران‌کیش (IranKish)
 
 ایران‌کیش درگاه پرداخت اینترنتی گروه توسن/شاپرک است. برای ساخت
@@ -25,10 +27,13 @@
 
 ## نصب
 
+<div dir="ltr">
+
 ```bash
 pip install "django-iranian-payment[irankish]"
 # pycryptodome + rsa برای رمزنگاری لازم است.
 ```
+</div>
 
 کلید عمومی RSA ایران‌کیش را از پورتال/تیم فنی بانک بگیر و در مسیری ذخیره کن.
 
@@ -38,6 +43,8 @@ pip install "django-iranian-payment[irankish]"
 ## حالت ۱: پکیج دیتابیس را مدیریت می‌کند
 
 ### قدم ۱: settings.py
+
+<div dir="ltr">
 
 ```python
 INSTALLED_APPS = [
@@ -60,8 +67,11 @@ IRANIAN_PAYMENT = {
     },
 }
 ```
+</div>
 
 ### قدم ۲: ثبت درگاه تجربی
+
+<div dir="ltr">
 
 ```python
 # yourapp/apps.py
@@ -76,12 +86,18 @@ class YourAppConfig(AppConfig):
         from django_iranian_payment.core.experimental.irankish import IrankishGateway
         _REGISTRY.setdefault("irankish", IrankishGateway)
 ```
+</div>
 
 ### قدم ۳: migration و url ها
+
+<div dir="ltr">
 
 ```bash
 python manage.py migrate
 ```
+</div>
+
+<div dir="ltr">
 
 ```python
 # project/urls.py
@@ -91,15 +107,21 @@ urlpatterns = [
     path("payment/", include("django_iranian_payment.contrib.django.urls")),
 ]
 ```
+</div>
 
 مسیرها:
+
+<div dir="ltr">
 
 ```
 GET  /payment/go/<payment_id>/        → هدایت به درگاه
 POST /payment/callback/irankish/      → برگشت از بانک (POST)
 ```
+</div>
 
 ### قدم ۴: view های خودت
+
+<div dir="ltr">
 
 ```python
 # yourapp/views.py
@@ -145,6 +167,7 @@ def payment_result(request):
         return HttpResponse("پرداخت ناموفق.")
     return HttpResponse("نتیجه نامشخص.", status=400)
 ```
+</div>
 
 ### جریان کامل حالت ۱
 
@@ -162,6 +185,8 @@ def payment_result(request):
 
 ### قدم ۱: settings.py (بدون افزودن اپ پکیج)
 
+<div dir="ltr">
+
 ```python
 IRANIAN_PAYMENT = {
     "currency": "rial",  # واحد ورودی مبلغ: "rial" (پیش‌فرض) یا "toman"
@@ -176,8 +201,11 @@ IRANIAN_PAYMENT = {
     },
 }
 ```
+</div>
 
 ### قدم ۲: ثبت درگاه تجربی
+
+<div dir="ltr">
 
 ```python
 # yourapp/apps.py
@@ -192,8 +220,11 @@ class YourAppConfig(AppConfig):
         from django_iranian_payment.core.experimental.irankish import IrankishGateway
         _REGISTRY.setdefault("irankish", IrankishGateway)
 ```
+</div>
 
 ### قدم ۳: مدل خودت
+
+<div dir="ltr">
 
 ```python
 # yourapp/models.py
@@ -213,8 +244,11 @@ class MyPayment(models.Model):
     callback_url = models.URLField(max_length=500)
     created_at   = models.DateTimeField(auto_now_add=True)
 ```
+</div>
 
 ### قدم ۴: url های خودت
+
+<div dir="ltr">
 
 ```python
 # yourapp/urls.py
@@ -226,8 +260,11 @@ urlpatterns = [
     path("pay/callback/irankish/", views.callback, name="ik-callback"),
 ]
 ```
+</div>
 
 ### قدم ۵: view شروع پرداخت
+
+<div dir="ltr">
 
 ```python
 # yourapp/views.py
@@ -270,8 +307,11 @@ def checkout(request):
     record.save()
     return HttpResponseRedirect(result.redirect_url)
 ```
+</div>
 
 ### قدم ۶: view بازگشت (POST) و verify با token + referenceId
+
+<div dir="ltr">
 
 ```python
 def callback(request):
@@ -310,6 +350,7 @@ def callback(request):
     record.save()
     return HttpResponse(f"پرداخت ناموفق: {record.error_message}")
 ```
+</div>
 
 ### نکات اختصاصی ایران‌کیش در حالت ۲
 
@@ -324,3 +365,4 @@ def callback(request):
 
 - [`scripts/django_irankish.py`](../../scripts/django_irankish.py) — کد هر دو حالت.
 - [`scripts/test_irankish.py`](../../scripts/test_irankish.py) — تست با ترمینال/کلید واقعی.
+</div>
