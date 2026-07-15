@@ -17,7 +17,10 @@ from django_iranian_payment.core.experimental.saman import (
     _VERIFY_URL,
     _REVERSE_URL,
 )
-from django_iranian_payment.core.exceptions import GatewayPaymentError
+from django_iranian_payment.core.exceptions import (
+    GatewayConfigurationError,
+    GatewayPaymentError,
+)
 
 CONF = {"terminal_id": "2015"}
 
@@ -79,9 +82,9 @@ def test_saman_initiate_rejected():
     assert exc.value.code == "5"
 
 
-def test_saman_initiate_ignores_neo_pg_ipg_url_header():
-    # تصمیم ثبت‌شده: حتی اگر ترمینال neo-pg (بلوپی) فعال باشد و هدر X-IPG-Url
-    # بیاید، عمداً نادیده گرفته می‌شود و به درگاه کلاسیک POST می‌شود (بدون مودال).
+def test_saman_classic_default_ignores_neo_pg_ipg_url_header():
+    # پیش‌فرض classic: حتی اگر هدر X-IPG-Url بیاید، نادیده گرفته و به درگاه کلاسیک
+    # POST می‌شود (بدون مودال).
     t = InMemoryTransport(
         {_TOKEN_URL: {"status": 1, "token": "TOK"}},
         response_headers={
@@ -92,6 +95,56 @@ def test_saman_initiate_ignores_neo_pg_ipg_url_header():
     assert res.redirect_url == _TOKEN_URL  # کلاسیک، نه neo-pg
     assert "neo-pg" not in res.redirect_url
     assert res.redirect_fields == {"Token": "TOK"}
+    assert res.raw["mode"] == "classic"
+
+
+def test_saman_neo_pg_mode_posts_to_ipg_url():
+    # mode=neo_pg: توکن با فرم POST به آدرس X-IPG-Url می‌رود (مودال بلوپی).
+    t = InMemoryTransport(
+        {_TOKEN_URL: {"status": 1, "token": "TOK"}},
+        response_headers={
+            _TOKEN_URL: {"X-IPG-Url": "https://neo-pg.sep.ir/transaction/init"}
+        },
+    )
+    res = _gw(t, mode="neo_pg").initiate(
+        PaymentRequest(amount=1000, callback_url="cb", order_id="1")
+    )
+    assert res.redirect_url == "https://neo-pg.sep.ir/transaction/init"
+    assert res.redirect_method == "POST"
+    assert res.redirect_fields == {"Token": "TOK"}
+    assert res.raw["mode"] == "neo_pg"
+
+
+def test_saman_neo_pg_alias_blupay():
+    # نام مستعار "blupay" هم حالت neo_pg است.
+    t = InMemoryTransport(
+        {_TOKEN_URL: {"status": 1, "token": "TOK"}},
+        response_headers={
+            _TOKEN_URL: {"X-IPG-Url": "https://neo-pg.sep.ir/transaction/init"}
+        },
+    )
+    res = _gw(t, mode="blupay").initiate(
+        PaymentRequest(amount=1000, callback_url="cb", order_id="1")
+    )
+    assert res.redirect_url == "https://neo-pg.sep.ir/transaction/init"
+
+
+def test_saman_neo_pg_mode_without_header_raises():
+    # mode=neo_pg ولی ترمینال neo-pg فعال ندارد (هدر نمی‌آید) → خطای روشن.
+    t = InMemoryTransport({_TOKEN_URL: {"status": 1, "token": "TOK"}})  # بدون هدر
+    with pytest.raises(GatewayPaymentError) as exc:
+        _gw(t, mode="neo_pg").initiate(
+            PaymentRequest(amount=1000, callback_url="cb", order_id="1")
+        )
+    assert exc.value.code == "neo_pg_not_enabled"
+
+
+def test_saman_invalid_mode_raises():
+    t = InMemoryTransport({_TOKEN_URL: {"status": 1, "token": "TOK"}})
+    with pytest.raises(GatewayConfigurationError):
+        _gw(t, mode="bogus").initiate(
+            PaymentRequest(amount=1000, callback_url="cb", order_id="1")
+        )
 
 
 # ---------- verify ----------

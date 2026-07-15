@@ -34,19 +34,35 @@ MerchantIpAddressIsInvalid در زمان دریافت توکن).
   مبلغ ارسالی اولیه تطبیق داشته باشد (نکته ۲ مستند). تطبیق مبلغ اینجا انجام
   می‌شود؛ عدم تطبیق → FAILED با کد amount_mismatch.
 
-⚠️ neo-pg / بلوپی (BluPay): اگر ترمینالِ پذیرنده neo-pg فعال داشته باشد، سامان
-هدر X-IPG-Url (مثل https://neo-pg.sep.ir/transaction/init) را در پاسخ توکن
-می‌فرستد و انتظار دارد توکن به همان آدرس POST شود — که آن‌جا یک مودال انتخاب
-«درگاه اینترنتی / بلوپی» نمایش می‌دهد. این پیاده‌سازی **عمداً X-IPG-Url را
-نادیده می‌گیرد** و همیشه به درگاه کلاسیک (`OnlinePG/OnlinePG`، ورود مستقیم کارت،
-بدون مودال) POST می‌کند — رفتاری که کاربر خواسته و اکثر سایت‌ها دارند. اگر
-ترمینالی اجباراً به neo-pg مسیردهی شده باشد و درگاه کلاسیک توکن را نپذیرد
-(TokenNotFound)، باید از واحد کسب‌وکار نوین سامان خواست بلوپی را روی ترمینال
-غیرفعال کنند.
+دو حالت هدایت — با کلید config `"mode"` انتخاب می‌شود (پیش‌فرض `"classic"`):
+
+- **classic** (پیش‌فرض): توکن با فرم POST به درگاه کلاسیک `OnlinePG/OnlinePG`
+  می‌رود. ورود مستقیم صفحه‌ی کارت، بدون مودال. X-IPG-Url نادیده گرفته می‌شود.
+- **neo_pg** (بلوپی/BluPay): توکن با فرم POST به آدرس هدر `X-IPG-Url`
+  (مثل https://neo-pg.sep.ir/transaction/init) می‌رود که مودال انتخاب
+  «درگاه اینترنتی / بلوپی» نشان می‌دهد. نیاز دارد ترمینال نزد سامان neo-pg فعال
+  داشته باشد؛ اگر نداشته باشد هدر X-IPG-Url نمی‌آید و initiate خطا می‌دهد.
+
+هر دو حالت طبق روش ۲٫۱ مستند با فرم POST (فیلد `Token`) هدایت می‌کنند تا هدر
+`Referrer` برود (الزام صفحه ۱۰ مستند). تنها تفاوت، آدرس action فرم است.
+
+config:
+    IRANIAN_PAYMENT = {
+        "gateways": {
+            "saman": {
+                "terminal_id": "...",
+                "mode": "classic",   # یا "neo_pg" (بلوپی). پیش‌فرض classic.
+            }
+        }
+    }
 """
 
 from ..base import BaseGateway
-from ..exceptions import GatewayPaymentError
+from ..exceptions import (
+    GatewayConfigurationError,
+    GatewayConnectionError,
+    GatewayPaymentError,
+)
 from ..models import (
     InitiateResult,
     PaymentRequest,
@@ -68,10 +84,30 @@ _STATE_OK = "OK"
 _RC_SUCCESS = 0
 _RC_DUPLICATE = 2  # درخواست تکراری (verify دوم روی همان RefNum)
 
+# حالت‌های هدایت
+_MODE_CLASSIC = "classic"
+_MODE_NEO_PG = "neo_pg"
+# نام‌های مستعار پذیرفته‌شده در config برای حالت بلوپی
+_NEO_PG_ALIASES = {"neo_pg", "neo-pg", "neopg", "neo", "blupay", "bluepay", "بلوپی"}
+
 
 class SamanGateway(BaseGateway):
     slug = "saman"
     requires = ("terminal_id",)
+
+    @property
+    def _mode(self):
+        """حالت هدایت: classic (پیش‌فرض) یا neo_pg (بلوپی). از config."""
+        raw = str(self.config.get("mode", _MODE_CLASSIC)).strip().lower()
+        if raw == _MODE_CLASSIC:
+            return _MODE_CLASSIC
+        if raw in _NEO_PG_ALIASES:
+            return _MODE_NEO_PG
+        raise GatewayConfigurationError(
+            f"درگاه saman: مقدار mode نامعتبر است: {self.config.get('mode')!r}. "
+            f"مجاز: 'classic' یا 'neo_pg'.",
+            gateway=self.slug,
+        )
 
     @property
     def _token_url(self):
@@ -106,7 +142,17 @@ class SamanGateway(BaseGateway):
             payload["TokenExpiryInMin"] = int(token_expiry)
 
         headers = {"Content-Type": "application/json"}
-        result = self._post(self._token_url, json=payload, headers=headers)
+        mode = self._mode
+
+        # neo_pg: آدرس مقصد از هدر X-IPG-Url خوانده می‌شود، پس هدر پاسخ لازم است.
+        ipg_url = None
+        if mode == _MODE_NEO_PG:
+            result, resp_headers = self._post_with_headers(
+                self._token_url, json=payload, headers=headers
+            )
+            ipg_url = resp_headers.get("X-IPG-Url") or resp_headers.get("x-ipg-url")
+        else:
+            result = self._post(self._token_url, json=payload, headers=headers)
 
         status = result.get("status")
         if status != 1:
@@ -119,11 +165,26 @@ class SamanGateway(BaseGateway):
             )
 
         token = result.get("token")
-        # هدایت طبق روش ۲٫۱ مستند: فرم auto-submit با متد POST و فیلد `Token` به
-        # آدرس درگاه کلاسیک. این تنها روشی است که Referrer را می‌فرستد (الزام
-        # مستند) و مودال neo-pg/بلوپی را دور می‌زند. X-IPG-Url عمداً خوانده نمی‌شود.
+
+        # هدایت طبق روش ۲٫۱ مستند: فرم POST با فیلد `Token`. Referrer الزامی است.
+        # تنها تفاوت دو حالت، آدرس action فرم است.
+        if mode == _MODE_NEO_PG:
+            if not ipg_url:
+                raise GatewayPaymentError(
+                    "حالت neo_pg (بلوپی) انتخاب شده ولی سامان هدر X-IPG-Url نفرستاد؛ "
+                    "یعنی این ترمینال نزد سامان neo-pg فعال ندارد. یا mode را "
+                    "'classic' کن یا از واحد کسب‌وکار سامان فعال‌سازی بلوپی را بخواه.",
+                    gateway=self.slug,
+                    code="neo_pg_not_enabled",
+                    raw=result,
+                )
+            action_url = ipg_url
+        else:
+            # classic: X-IPG-Url (اگر هم بیاید) عمداً نادیده گرفته می‌شود.
+            action_url = self._token_url
+
         return InitiateResult(
-            redirect_url=self._token_url,
+            redirect_url=action_url,
             redirect_method="POST",
             redirect_fields={"Token": token},
             authority=token,
@@ -132,9 +193,22 @@ class SamanGateway(BaseGateway):
             raw={
                 "result": result,
                 "token": token,
-                "post_to": self._token_url,
+                "post_to": action_url,
+                "mode": mode,
+                "ipg_url": ipg_url,
             },
         )
+
+    def _post_with_headers(self, url, *, json=None, headers=None):
+        """POST که (body, response_headers) برمی‌گرداند؛ برای خواندن X-IPG-Url."""
+        try:
+            return self.transport.post_with_headers(
+                url, json=json, headers=headers, timeout=self.timeout
+            )
+        except GatewayConnectionError as e:
+            if e.gateway is None:
+                e.gateway = self.slug
+            raise
 
     # ---------- verify ----------
 
