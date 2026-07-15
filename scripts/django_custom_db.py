@@ -77,7 +77,7 @@ start_payment/verify_payment + view و url داخلی). این فایل حالت
         },
     }
 
-⚠️ درگاه‌های تجربی (saman/irankish/nextpay/sadad/digipay) در registry عمومی نیستند.
+⚠️ درگاه‌های تجربی (irankish/nextpay/sadad/digipay) در registry عمومی نیستند.
    برای اینکه get_gateway آن‌ها را بشناسد باید یک‌بار register کنی (در AppConfig.ready):
 
     # yourapp/apps.py
@@ -87,17 +87,15 @@ start_payment/verify_payment + view و url داخلی). این فایل حالت
         name = "yourapp"
         def ready(self):
             from django_iranian_payment.core.gateways import _REGISTRY
-            from django_iranian_payment.core.experimental.saman import SamanGateway
             from django_iranian_payment.core.experimental.irankish import IrankishGateway
             from django_iranian_payment.core.experimental.nextpay import NextPayGateway
             from django_iranian_payment.core.experimental.sadad import SadadGateway
             from django_iranian_payment.core.experimental.digipay import DigipayGateway
-            _REGISTRY.setdefault("saman", SamanGateway)
             _REGISTRY.setdefault("irankish", IrankishGateway)
             _REGISTRY.setdefault("nextpay", NextPayGateway)
             _REGISTRY.setdefault("sadad", SadadGateway)
             _REGISTRY.setdefault("digipay", DigipayGateway)
-   # zarinpal/zibal/mellat در registry عمومی هستند و نیازی به این کار ندارند.
+   # zarinpal/zibal/mellat/saman در registry عمومی هستند و نیازی به این کار ندارند.
 
 ━━ مدل نمونه‌ی خودت ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 

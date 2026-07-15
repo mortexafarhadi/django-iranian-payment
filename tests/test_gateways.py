@@ -234,3 +234,22 @@ def test_mellat_no_longer_in_experimental():
     from django_iranian_payment.core import experimental
 
     assert not hasattr(experimental, "MellatGateway")
+
+
+# ============== رگرسیون: سامان پس از تست واقعی به registry عمومی منتقل شد ==============
+
+
+def test_saman_in_public_registry():
+    # سامان با تراکنش واقعی روی ترمینال واقعی تست شد و طبق قانون طلایی عمومی شد.
+    # این تست مانع بازگشت ناآگاهانه به experimental می‌شود.
+    from django_iranian_payment.core.gateways import available_slugs, get_gateway_class
+
+    assert "saman" in available_slugs()
+    assert get_gateway_class("saman").slug == "saman"
+
+
+def test_saman_no_longer_in_experimental():
+    # دیگر نباید از experimental قابل import باشد (به gateways منتقل شد)
+    from django_iranian_payment.core import experimental
+
+    assert not hasattr(experimental, "SamanGateway")

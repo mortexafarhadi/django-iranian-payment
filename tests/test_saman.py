@@ -11,7 +11,7 @@ import pytest
 from django_iranian_payment.core.base import InMemoryTransport
 from django_iranian_payment.core.fee import FeeConfig, FeePayer
 from django_iranian_payment.core.models import PaymentRequest, PaymentStatus
-from django_iranian_payment.core.experimental.saman import (
+from django_iranian_payment.core.gateways.saman import (
     SamanGateway,
     _TOKEN_URL,
     _VERIFY_URL,
@@ -277,10 +277,10 @@ def test_saman_reverse_failed():
     assert res.error_code == "-105"
 
 
-# ---------- registry: نباید عمومی باشد (قانون طلایی) ----------
+# ---------- registry: پس از تست تراکنش واقعی عمومی شد (قانون طلایی) ----------
 
 
-def test_saman_importable_from_experimental():
-    from django_iranian_payment.core.experimental.saman import SamanGateway as S
+def test_saman_available_via_get_gateway_class():
+    from django_iranian_payment.core.gateways import get_gateway_class
 
-    assert S is SamanGateway
+    assert get_gateway_class("saman") is SamanGateway

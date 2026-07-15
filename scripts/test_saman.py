@@ -26,7 +26,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from django_iranian_payment.core.experimental.saman import (  # noqa: E402
+from django_iranian_payment.core.gateways.saman import (  # noqa: E402
     SamanGateway,
     _TOKEN_URL,
 )

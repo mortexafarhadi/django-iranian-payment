@@ -37,18 +37,9 @@
     # (زرین‌پال/ملت/دیجی‌پی) کلید "sandbox" داخل config درگاه بر مقدار سراسری
     # اولویت دارد. سامان از این قاعده مستثناست (بالا را ببین).
 
-━━ قدم ۳: ثبت درگاه سامان در registry ━━━━━━━━━━━━━━━━━━━━━
-
-    # yourapp/apps.py
-    class YourAppConfig(AppConfig):
-        name = "yourapp"
-
-        def ready(self):
-            from django_iranian_payment.core.gateways import _REGISTRY
-            from django_iranian_payment.core.experimental.saman import SamanGateway
-            _REGISTRY["saman"] = SamanGateway
-
-━━ قدم ۴: URL های پکیج ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━ قدم ۳: URL های پکیج ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # سامان اکنون در registry عمومی است؛ ثبت دستی لازم نیست.
+    # get_gateway("saman") مستقیماً کار می‌کند.
 
     urlpatterns = [
         ...

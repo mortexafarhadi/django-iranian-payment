@@ -282,6 +282,14 @@ uv run python scripts/test_digipay.py verify <TRACKING_CODE> <AMOUNT>
 
 ## ۹. وضعیت فعلی و کارهای باز
 
+- ✅ نسخه‌ی `1.0.0`: **سامان (SEP) پس از تست تراکنش واقعی با ترمینال واقعی به
+  registry عمومی منتقل شد** (طبق قانون طلایی). از `core/experimental/saman.py` به
+  `core/gateways/saman.py` منتقل و به `_REGISTRY` افزوده شد؛ حالا با
+  `get_gateway("saman")` در دسترس است. دو تست رگرسیون قفلش می‌کنند:
+  `test_saman_in_public_registry` و `test_saman_no_longer_in_experimental`. سامان
+  URL سندباکس جدا ندارد (فلگ sandbox بی‌اثر). دو حالت `mode`: `classic` (پیش‌فرض) و
+  `neo_pg` (بلوپی).
+
 - ✅ نسخه‌ی `0.7.0`: **انتخاب واحد پول (ریال/تومان)** با کلید سراسری
   `IRANIAN_PAYMENT["currency"]` و `PaymentRequest.currency` (بند ۱). تبدیل در
   `resolve_amount()` انجام می‌شود؛ هیچ درگاهی تغییر نکرد. مبالغ ذخیره/بازگشتی ریال
@@ -295,9 +303,15 @@ uv run python scripts/test_digipay.py verify <TRACKING_CODE> <AMOUNT>
     نمی‌یافت و ۴۰۴ می‌داد؛ حالا کار می‌کند (پس از register شدن درگاه تجربی).
   - راهنمای کامل هر درگاه برای هر دو حالت مدیریت دیتابیس در `docs/gateways/` اضافه شد.
 
-- ✅ هسته‌ی بدون state، ۳ درگاه در registry عمومی:
+- ✅ هسته‌ی بدون state، ۴ درگاه در registry عمومی:
   - zarinpal/zibal (REST، sandbox باز، از هر IP قابل تست). توجه: فقط sandbox تست
     شده — **تراکنش live این دو هنوز تست نشده**.
+  - **saman** (SEP، REST/JSON): با **تراکنش واقعی روی ترمینال واقعی** تست شد و طبق
+    قانون طلایی به registry عمومی منتقل شد (نسخه‌ی `1.0.0`). توکن → redirect (فرم
+    POST با فیلد `Token`) → callback POST → VerifyTransaction. verify به `RefNum`
+    از extra نیاز دارد؛ رکورد در callback با `order_id` (==`ResNum`) پیدا می‌شود
+    چون توکن در callback برنمی‌گردد. ResultCode=2 → DUPLICATE. تطبیق مبلغ
+    (OrginalAmount) داخل verify. دو حالت `mode`: `classic` (پیش‌فرض) / `neo_pg`.
   - **mellat** (SOAP): با **تراکنش واقعی روی محیط عملیاتی (bpm.shaparak.ir)**
     تست شد و طبق قانون طلایی به registry عمومی منتقل شد (۱۴۰۵/۰۴/۰۳). داده‌ی واقعی
     تأییدشده: تراکنش موفق (ResCode=0، SaleReferenceId، CardHolderPan، FinalAmount)
@@ -316,12 +330,9 @@ uv run python scripts/test_digipay.py verify <TRACKING_CODE> <AMOUNT>
 - ❌ idpay از کار افتاده: سرویس کلاً از دسترس خارج شده و دیگر سرویس نمی‌دهد
   (آخرین فعالیت پشتیبانی ~2025-11-20). کد در core/experimental به‌عنوان آرشیو
   مانده ولی توصیه نمی‌شود. با import صریح هنوز در دسترس.
-- ⚠️ پنج درگاه تجربیِ دیگر (پیاده‌سازی کامل از مستند رسمی + تست InMemoryTransport،
+- ⚠️ چهار درگاه تجربیِ دیگر (پیاده‌سازی کامل از مستند رسمی + تست InMemoryTransport،
   ولی هنوز در experimental چون **حتی تست script سندباکس هم نشده** — به‌دلیل
   محدودیت دسترسی، قرارداد پذیرندگی، ثبت IP و کلید واقعی):
-  - **saman** (SEP): REST/JSON. توکن → redirect → callback POST → VerifyTransaction.
-    verify به RefNum از extra نیاز دارد. ResultCode=2 → DUPLICATE. تطبیق مبلغ
-    (OrginalAmount) داخل verify. هدر X-IPG-Url برای neo-pg پشتیبانی می‌شود.
   - **irankish** (ایران‌کیش): REST/JSON با authenticationEnvelope (AES+RSA+SHA256).
     verify به token و reference_id از extra نیاز دارد. وابستگی اختیاری: [irankish]
     (pycryptodome + rsa). ⚠️ برخلاف کد مرجع، SSL هرگز خاموش نمی‌شود.
@@ -344,10 +355,10 @@ uv run python scripts/test_digipay.py verify <TRACKING_CODE> <AMOUNT>
 - ✅ تست view با Django TestClient (جریان کامل callback→redirect) — ۷ تست.
 - ✅ سوییت تست خودکار سبز (تعداد دقیق را با pytest بگیر، نه از این مستند — بخش ۶).
 - ⚠️ هنوز **هیچ تراکنش واقعی برای درگاه‌های تجربی تست نشده** — فقط منطق با
-  InMemoryTransport و monkeypatch. zarinpal/zibal تست script سندباکس دارند و mellat
-  تست تراکنش live دارد (هر سه در registry عمومی). سداد/سامان/ایران‌کیش/نکست‌پی/
-  دیجی‌پی به‌دلیل محدودیت‌های دسترسی حتی تست script سندباکسشان هم انجام نشده و
-  کدشان صرفاً از روی مستندات رسمی نوشته شده است.
+  InMemoryTransport و monkeypatch. zarinpal/zibal تست script سندباکس دارند و
+  mellat/saman تست تراکنش واقعی دارند (هر چهار در registry عمومی). سداد/ایران‌کیش/
+  نکست‌پی/دیجی‌پی به‌دلیل محدودیت‌های دسترسی حتی تست script سندباکسشان هم انجام نشده
+  و کدشان صرفاً از روی مستندات رسمی نوشته شده است.
 - ⬜ درگاه‌های تجربیِ باقی‌مانده اسکلت‌اند (منتظر مستندات واقعی هر بانک).
 - ⬜ celery/cron برای reverify_pending در مستندات هست ولی نمونه‌ی آماده ندارد.
 
@@ -376,6 +387,12 @@ uv run python scripts/test_digipay.py verify <TRACKING_CODE> <AMOUNT>
   ماژولش بدون zeep هم سالم است (zeep فقط داخل `_client()` لازی import می‌شود)، پس
   افزودنش به registry، import کاربران بدون [soap] را نمی‌شکند.
   تغییر امضای verify (افزودن extra=None) زرین‌پال/زیبال را نشکست؛ کل سوییت سبز است.
+- سامان پس از **تست تراکنش واقعی با ترمینال واقعی** به registry عمومی منتقل شد
+  (نسخه‌ی `1.0.0`) — از experimental خارج و به `core/gateways/saman.py`. دو تست
+  رگرسیون قفلش می‌کنند: `test_saman_in_public_registry` و
+  `test_saman_no_longer_in_experimental` (در test_gateways.py). اگر کسی سامان را
+  دوباره به experimental برگرداند، این تست‌ها باید بشکنند. `_CALLBACK_SPEC` سامان
+  (پیدا کردن رکورد با `order_id`/`ResNum`) از قبل موجود بود و دست‌نخورده ماند.
 - pay_ir و idpay از کار افتاده‌اند (سرویس کلاً قطع است، نه معلق موقت). در registry
   عمومی نیستند. تست‌های رگرسیون موجود در test_gateways.py این را قفل کرده‌اند:
   `test_pay_ir_not_in_public_registry` و `test_pay_ir_still_importable_from_experimental`

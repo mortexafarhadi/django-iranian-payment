@@ -4,8 +4,8 @@
 
 سامان درگاه پرداخت اینترنتی بانک سامان با REST/JSON و flow مبتنی بر Token است.
 
-- **وضعیت:** ⚠️ **تجربی** — کد کامل از مستند رسمی، ولی با ترمینال/sandbox واقعی
-  تست نشده. در registry عمومی نیست؛ برای استفاده باید صریحاً register شود.
+- **وضعیت:** ✅ **registry عمومی** — با **تراکنش واقعی روی ترمینال واقعی** تست شد و
+  طبق قانون طلایی عمومی شد. با `get_gateway("saman")` مستقیماً در دسترس است.
 - **هدایت کاربر:** **فرم POST** (فیلد `Token`) به درگاه کلاسیک `OnlinePG/OnlinePG`
   (`result.redirect_method == "POST"`، `result.redirect_fields == {"Token": ...}`).
   مستند بانک صریح است: هدایت باید از طریق فرم/لینکِ سایت پذیرنده باشد تا مرورگر
@@ -57,7 +57,6 @@ pip install django-iranian-payment
 INSTALLED_APPS = [
     # ...
     "django_iranian_payment.contrib.django",
-    "yourapp",   # برای ثبت درگاه تجربی در AppConfig.ready (قدم ۲)
 ]
 
 IRANIAN_PAYMENT = {
@@ -74,28 +73,7 @@ IRANIAN_PAYMENT = {
 ```
 </div>
 
-### قدم ۲: ثبت درگاه تجربی در registry
-
-چون سامان در registry عمومی نیست، آن را در `AppConfig.ready` ثبت کن:
-
-<div dir="ltr">
-
-```python
-# yourapp/apps.py
-from django.apps import AppConfig
-
-
-class YourAppConfig(AppConfig):
-    name = "yourapp"
-
-    def ready(self):
-        from django_iranian_payment.core.gateways import _REGISTRY
-        from django_iranian_payment.core.experimental.saman import SamanGateway
-        _REGISTRY.setdefault("saman", SamanGateway)
-```
-</div>
-
-### قدم ۳: migration و url ها
+### قدم ۲: migration و url ها
 
 <div dir="ltr">
 
@@ -127,7 +105,7 @@ POST /payment/callback/saman/       → برگشت از بانک (POST)
 ```
 </div>
 
-### قدم ۴: view های خودت
+### قدم ۳: view های خودت
 
 <div dir="ltr">
 
@@ -210,26 +188,7 @@ IRANIAN_PAYMENT = {
 ```
 </div>
 
-### قدم ۲: ثبت درگاه تجربی
-
-<div dir="ltr">
-
-```python
-# yourapp/apps.py
-from django.apps import AppConfig
-
-
-class YourAppConfig(AppConfig):
-    name = "yourapp"
-
-    def ready(self):
-        from django_iranian_payment.core.gateways import _REGISTRY
-        from django_iranian_payment.core.experimental.saman import SamanGateway
-        _REGISTRY.setdefault("saman", SamanGateway)
-```
-</div>
-
-### قدم ۳: مدل خودت
+### قدم ۲: مدل خودت
 
 <div dir="ltr">
 
@@ -253,7 +212,7 @@ class MyPayment(models.Model):
 ```
 </div>
 
-### قدم ۴: url های خودت
+### قدم ۳: url های خودت
 
 <div dir="ltr">
 
@@ -269,7 +228,7 @@ urlpatterns = [
 ```
 </div>
 
-### قدم ۵: view شروع پرداخت
+### قدم ۴: view شروع پرداخت
 
 <div dir="ltr">
 
@@ -329,7 +288,7 @@ def checkout(request):
 ```
 </div>
 
-### قدم ۶: view بازگشت (POST) و verify با RefNum
+### قدم ۵: view بازگشت (POST) و verify با RefNum
 
 <div dir="ltr">
 

@@ -52,7 +52,7 @@ IRANIAN_PAYMENT = {
 | زرین‌پال | ✅ registry عمومی (sandbox تست‌شده) | بله (`sandbox.zarinpal.com`) | — | [zarinpal.md](zarinpal.md) |
 | زیبال | ✅ registry عمومی (sandbox تست‌شده) | با `merchant="zibal"` | — | [zibal.md](zibal.md) |
 | ملت | ✅ registry عمومی (**تراکنش live تست‌شده**) | بله | `[soap]` | [mellat.md](mellat.md) |
-| سامان (SEP) | ⚠️ تجربی (تست‌نشده) | ندارد | — | [saman.md](saman.md) |
+| سامان (SEP) | ✅ registry عمومی (**تراکنش واقعی تست‌شده**) | ندارد | — | [saman.md](saman.md) |
 | ایران‌کیش | ⚠️ تجربی (تست‌نشده) | ندارد | `[irankish]` | [irankish.md](irankish.md) |
 | نکست‌پی | ⚠️ تجربی (تست‌نشده) | ندارد | — | [nextpay.md](nextpay.md) |
 | سداد | ⚠️ تجربی (تست‌نشده) | ندارد | `[sadad]` | [sadad.md](sadad.md) |

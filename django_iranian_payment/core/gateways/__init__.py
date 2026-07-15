@@ -5,6 +5,8 @@ registry عمومی — فقط درگاه‌های تست‌شده و پایدا
 - zarinpal، zibal: REST، تست sandbox موفق.
 - mellat: SOAP، تست تراکنش واقعی موفق روی محیط عملیاتی (bpm.shaparak.ir).
   برای فراخوانی به zeep نیاز دارد: pip install "django-iranian-payment[soap]".
+- saman: REST/JSON (SEP)، تست تراکنش واقعی موفق با ترمینال واقعی.
+  URL سندباکس جدا ندارد؛ فلگ sandbox بی‌اثر است.
 
 درگاه‌های معلق (کد سالم، ولی سرویس بی‌ثبات/از کار افتاده) در experimental هستند:
 - pay_ir: بی‌ثباتی شبکهٔ پرداخت پی.
@@ -14,8 +16,12 @@ registry عمومی — فقط درگاه‌های تست‌شده و پایدا
 from .zarinpal import ZarinpalGateway
 from .zibal import ZibalGateway
 from .mellat import MellatGateway
+from .saman import SamanGateway
 
-_REGISTRY = {cls.slug: cls for cls in (ZarinpalGateway, ZibalGateway, MellatGateway)}
+_REGISTRY = {
+    cls.slug: cls
+    for cls in (ZarinpalGateway, ZibalGateway, MellatGateway, SamanGateway)
+}
 
 
 def available_slugs():
