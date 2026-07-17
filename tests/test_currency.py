@@ -31,10 +31,12 @@ def test_to_rial_accepts_string():
 # ---------- PaymentRequest.resolve_amount ----------
 
 
-def test_default_currency_is_rial():
+def test_default_currency_is_unspecified_and_resolves_as_rial():
+    # currency پیش‌فرض None («مشخص‌نشده») است تا لایه‌ی Django بتواند واحد سراسری را
+    # تزریق کند؛ ولی هسته آن را ریال می‌گیرد پس رفتار پیش‌فرض دست‌نخورده می‌ماند.
     req = PaymentRequest(amount=150_000, callback_url="x", order_id="1")
-    assert req.currency == Currency.RIAL
-    assert req.resolve_amount().amount_to_send == 150_000  # بدون تغییر
+    assert req.currency is None
+    assert req.resolve_amount().amount_to_send == 150_000  # بدون تغییر (ریال)
 
 
 def test_toman_amount_converted_to_rial():

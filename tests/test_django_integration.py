@@ -97,3 +97,71 @@ def test_two_gateways_independent_sandbox():
     zb = get_gateway("zibal")
     assert zp.sandbox is True
     assert zb.sandbox is False
+
+
+# ─────────────────────────────────────────────────────────────
+#  تزریق واحد پول سراسری در مسیر toolkit (get_gateway().initiate())
+# ─────────────────────────────────────────────────────────────
+#
+# رگرسیون باگِ واقعی: کاربر IRANIAN_PAYMENT["currency"]="toman" گذاشت ولی چون از
+# get_gateway().initiate(PaymentRequest(amount=...)) استفاده می‌کرد (نه start_payment)
+# و currency را روی PaymentRequest نمی‌داد، مبلغِ تومان خام به بانک می‌رفت (تومان با
+# ریال فرقی نداشت). حالا get_gateway واحد سراسری را به درخواستِ بدون currency تزریق
+# می‌کند، پس مسیر toolkit هم تبدیل را انجام می‌دهد.
+
+from django_iranian_payment.core.base import InMemoryTransport
+from django_iranian_payment.core.models import Currency, PaymentRequest
+
+ZP_REQ = "https://sandbox.zarinpal.com/pg/v4/payment/request.json"
+
+
+@override_settings(
+    IRANIAN_PAYMENT={
+        "sandbox": True,
+        "currency": "toman",
+        "gateways": {"zarinpal": {"merchant_id": "m"}},
+    }
+)
+def test_get_gateway_injects_global_toman_into_toolkit_request():
+    t = InMemoryTransport({ZP_REQ: {"data": {"authority": "A"}, "errors": []}})
+    gw = get_gateway("zarinpal", transport=t)
+    # کاربر currency نمی‌دهد (مثل اسکریپت‌های toolkit)
+    req = PaymentRequest(amount=15_000, callback_url="cb", order_id="1")
+    result = gw.initiate(req)
+    # واحد سراسری toman تزریق شد → ۱۵۰۰۰ تومان = ۱۵۰۰۰۰ ریال به بانک
+    assert t.requests_log[0]["json"]["amount"] == 150_000
+    assert result.amount_to_send == 150_000
+    assert req.currency == Currency.TOMAN  # تزریق روی خود درخواست هم دیده می‌شود
+
+
+@override_settings(
+    IRANIAN_PAYMENT={
+        "sandbox": True,
+        "currency": "toman",
+        "gateways": {"zarinpal": {"merchant_id": "m"}},
+    }
+)
+def test_explicit_request_currency_overrides_global_injection():
+    t = InMemoryTransport({ZP_REQ: {"data": {"authority": "A"}, "errors": []}})
+    gw = get_gateway("zarinpal", transport=t)
+    # کاربر صریحاً ریال خواسته → تزریق سراسری (toman) نباید غالب شود
+    req = PaymentRequest(
+        amount=15_000, callback_url="cb", order_id="1", currency="rial"
+    )
+    gw.initiate(req)
+    assert t.requests_log[0]["json"]["amount"] == 15_000  # ریال دست‌نخورده
+
+
+@override_settings(
+    IRANIAN_PAYMENT={
+        "sandbox": True,
+        "gateways": {"zarinpal": {"merchant_id": "m"}},
+    }
+)
+def test_default_rial_toolkit_request_unchanged():
+    # بدون کلید currency سراسری (پیش‌فرض rial) → رفتار قبلی: بدون تبدیل.
+    t = InMemoryTransport({ZP_REQ: {"data": {"authority": "A"}, "errors": []}})
+    gw = get_gateway("zarinpal", transport=t)
+    req = PaymentRequest(amount=15_000, callback_url="cb", order_id="1")
+    gw.initiate(req)
+    assert t.requests_log[0]["json"]["amount"] == 15_000

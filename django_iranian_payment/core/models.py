@@ -54,26 +54,34 @@ class PaymentRequest:
     mobile: Optional[str] = None  # موبایل پرداخت‌کننده (اختیاری)
     email: Optional[str] = None  # ایمیل پرداخت‌کننده (اختیاری)
     fee: Optional[FeeConfig] = None  # تنظیم کارمزد؛ None یعنی بدون کارمزد
-    currency: Currency = Currency.RIAL  # واحد amount و fee (rial یا toman)
+    # واحد amount و fee. None یعنی «مشخص‌نشده»: هسته آن را ریال می‌گیرد (رفتار
+    # پیش‌فرض)، ولی لایه‌ی Django (get_gateway) واحد سراسری IRANIAN_PAYMENT["currency"]
+    # را در initiate تزریق می‌کند. پس مسیر toolkit هم مثل start_payment واحد سراسری
+    # را رعایت می‌کند بدون اینکه کاربر currency را در هر PaymentRequest بدهد.
+    currency: Optional[Currency] = None
 
     def __post_init__(self):
         if self.amount <= 0:
             raise ValueError("amount باید بزرگ‌تر از صفر باشد")
-        # نرمال‌سازی currency رشته‌ای به enum (و اعتبارسنجی)
-        self.currency = Currency(self.currency)
+        # نرمال‌سازی currency رشته‌ای به enum (و اعتبارسنجی)؛ None دست‌نخورده می‌ماند.
+        if self.currency is not None:
+            self.currency = Currency(self.currency)
+
+    def _unit(self) -> Currency:
+        """واحد مؤثر: currency مشخص‌شده، وگرنه ریال (پیش‌فرض هسته)."""
+        return self.currency if self.currency is not None else Currency.RIAL
 
     def _fee_in_rial(self) -> FeeConfig:
         """نسخه‌ی ریالی از fee می‌سازد (fixed و max_fee از واحد ورودی به ریال)."""
         f = self.fee
-        if self.currency == Currency.RIAL:
+        unit = self._unit()
+        if unit == Currency.RIAL:
             return f
         return FeeConfig(
             rate_bps=f.rate_bps,  # نرخ bps واحد‌مستقل است
-            fixed=to_rial(f.fixed, self.currency),
+            fixed=to_rial(f.fixed, unit),
             who_pays=f.who_pays,
-            max_fee=(
-                to_rial(f.max_fee, self.currency) if f.max_fee is not None else None
-            ),
+            max_fee=(to_rial(f.max_fee, unit) if f.max_fee is not None else None),
         )
 
     def resolve_amount(self) -> FeeResult:
@@ -83,7 +91,7 @@ class PaymentRequest:
         ریالی اعمال می‌شود. خروجی این متد مرجع یکتاست: همان amount_to_send (ریال) به
         initiate و verify می‌رود.
         """
-        rial_amount = to_rial(self.amount, self.currency)
+        rial_amount = to_rial(self.amount, self._unit())
         if self.fee is None:
             return FeeResult(
                 base_amount=rial_amount,

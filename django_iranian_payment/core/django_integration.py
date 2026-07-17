@@ -91,6 +91,24 @@ def get_gateway(slug, *, timeout=15, transport=None, sandbox=None):
     gw_config = {k: v for k, v in gw_config.items() if k != "sandbox"}
 
     gateway_cls = get_gateway_class(slug)
-    return gateway_cls(
+    gw = gateway_cls(
         config=gw_config, sandbox=sandbox, timeout=timeout, transport=transport
     )
+
+    # واحد پیش‌فرض سراسری را به درخواست‌هایی که currency مشخص نکرده‌اند تزریق کن.
+    # علت: تبدیل تومان→ریال داخل PaymentRequest.resolve_amount() و بر پایه‌ی
+    # request.currency انجام می‌شود؛ ولی هسته Django-free است و نمی‌تواند
+    # IRANIAN_PAYMENT["currency"] را بخواند. بدون این تزریق، فقط start_payment واحد
+    # سراسری را اعمال می‌کرد و مسیر toolkit (get_gateway().initiate(PaymentRequest(...)))
+    # آن را نادیده می‌گرفت (باگ: toman با rial فرقی نداشت). حالا هر دو مسیر یکسان‌اند.
+    # اگر کاربر currency را صریح روی PaymentRequest بدهد، دست‌نخورده می‌ماند.
+    default_currency = get_default_currency()
+    _initiate = gw.initiate
+
+    def initiate_with_default_currency(request):
+        if getattr(request, "currency", None) is None:
+            request.currency = default_currency
+        return _initiate(request)
+
+    gw.initiate = initiate_with_default_currency
+    return gw

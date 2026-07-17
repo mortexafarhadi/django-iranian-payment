@@ -294,7 +294,10 @@ def checkout(request, slug):
 
     # order_id را خودت یکتا بساز (uuid، شماره‌ی سفارش، ...). بانک آن را echo می‌کند.
     order_id = f"ORDER-{uuid.uuid4().hex[:16]}"
-    amount = 150_000  # ریال — از سبد خرید واقعی بخوان
+    # amount در واحد IRANIAN_PAYMENT["currency"] است (rial پیش‌فرض یا toman). get_gateway
+    # واحد سراسری را خودکار اعمال می‌کند، پس اگر "currency": "toman" باشد این عدد ×۱۰
+    # (ریال) به بانک می‌رود. مبلغِ ریالیِ ارسال‌شده = result.amount_to_send (پایین).
+    amount = 15_000  # از سبد خرید واقعی بخوان
 
     # callback_url باید به view خودت اشاره کند (نه پکیج).
     callback_url = request.build_absolute_uri(
@@ -321,6 +324,8 @@ def checkout(request, slug):
                 # اگر کارمزد می‌خواهی:
                 #   from django_iranian_payment import FeeConfig, FeePayer
                 #   fee=FeeConfig(rate_bps=100, who_pays=FeePayer.CUSTOMER),
+                # واحد ورودی را می‌توانی صریح هم بدهی: currency="toman" (بر تنظیم
+                # سراسری اولویت دارد). بدون آن، واحد سراسری اعمال می‌شود.
             )
         )
     except GatewayError as e:

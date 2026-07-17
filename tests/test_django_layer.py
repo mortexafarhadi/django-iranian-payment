@@ -48,6 +48,33 @@ def test_start_payment_toman_converts_and_stores_rial():
 
 
 @pytest.mark.django_db
+def test_start_payment_reads_global_toman_setting():
+    # رگرسیون: بدون currency صریح، تنظیم سراسری IRANIAN_PAYMENT["currency"]="toman"
+    # باید مبلغ را ×۱۰ کند. باگِ قبلی: toman با rial فرقی نداشت چون واحد سراسری
+    # خوانده نمی‌شد (get_default_currency پاس نمی‌شد).
+    from django.test import override_settings
+
+    t = InMemoryTransport({ZP_REQ: {"data": {"authority": "AG"}, "errors": []}})
+    with override_settings(
+        IRANIAN_PAYMENT={
+            "currency": "toman",
+            "sandbox": True,
+            "gateways": {"zarinpal": {"merchant_id": "test-merchant"}},
+        }
+    ):
+        payment, _ = services.start_payment(
+            "zarinpal",
+            amount=15_000,  # تومان (از تنظیم سراسری)
+            callback_url="cb",
+            order_id="OG",
+            transport=t,  # currency عمداً پاس نمی‌شود
+        )
+    assert payment.amount == 150_000  # ریال (تبدیل‌شده از تنظیم سراسری)
+    assert payment.amount_sent == 150_000
+    assert t.requests_log[0]["json"]["amount"] == 150_000
+
+
+@pytest.mark.django_db
 def test_start_payment_with_fee_stores_amount_sent():
     t = InMemoryTransport({ZP_REQ: {"data": {"authority": "A1"}, "errors": []}})
     fee = FeeConfig(rate_bps=200, who_pays=FeePayer.CUSTOMER)

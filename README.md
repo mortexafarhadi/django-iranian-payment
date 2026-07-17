@@ -134,20 +134,26 @@ IRANIAN_PAYMENT = {
     "gateways": {...},
 }
 
-# با تنظیم بالا:
+# با تنظیم بالا (هر دو مسیر یکسان عمل می‌کنند):
 services.start_payment("zarinpal", amount=15_000, ...)   # ۱۵۰۰۰ تومان → بانک ۱۵۰۰۰۰ ریال
+# مسیر toolkit هم واحد سراسری را رعایت می‌کند (get_gateway آن را تزریق می‌کند):
+get_gateway("zarinpal").initiate(PaymentRequest(amount=15_000, ...))  # هم ۱۵۰۰۰۰ ریال
 ```
 
 - پیش‌فرض `"rial"` است (سازگار با قبل؛ هیچ تبدیلی انجام نمی‌شود).
+- واحد سراسری در **هر دو مسیر** اعمال می‌شود: هم `start_payment`، هم
+  `get_gateway(...).initiate(PaymentRequest(...))`. در مسیر toolkit، `get_gateway`
+  واحد سراسری را در درخواستی که `currency` مشخص نکرده تزریق می‌کند. اگر `currency` را
+  روی خود `PaymentRequest` بدهی، بر تنظیم سراسری اولویت دارد.
 - تبدیل **۱ تومان = ۱۰ ریال** فقط یک‌بار و در همان ابتدای کار انجام می‌شود.
 - مبالغ ذخیره‌شده در مدل `Payment` و مقادیر بازگشتی verify **همیشه ریال‌اند** (واحد
   بانک)؛ `currency` فقط واحد *ورودی* را تعیین می‌کند. برای نمایش به کاربر در تومان،
   خودت بر ۱۰ تقسیم کن.
 - کارمزد: `rate_bps` واحد‌مستقل است؛ ولی `fixed` و `max_fee` در همان واحد ورودی
   تفسیر و خودکار به ریال تبدیل می‌شوند.
-- در لایه‌ی هسته (بدون Django) واحد را روی خود درخواست بده:
-  `PaymentRequest(amount=15_000, currency="toman", ...)`. برای خواندن مقدار سراسری
-  از settings هم `from django_iranian_payment import get_default_currency` هست.
+- در لایه‌ی هسته‌ی خالص (بدون Django و بدون `get_gateway`) واحد را روی خود درخواست
+  بده: `PaymentRequest(amount=15_000, currency="toman", ...)`. برای خواندن مقدار
+  سراسری از settings هم `from django_iranian_payment import get_default_currency` هست.
 
 ### sandbox مجزای هر درگاه
 

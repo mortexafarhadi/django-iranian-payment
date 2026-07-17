@@ -177,7 +177,10 @@ def checkout_self_managed(request):
     from yourapp.models import MyPayment
 
     order_id = "SAMAN-ORDER-001"  # همین به‌عنوان ResNum می‌رود و در callback برمی‌گردد
-    amount = 300_000  # ریال
+    # amount در واحد IRANIAN_PAYMENT["currency"] است (rial پیش‌فرض یا toman). واحد
+    # سراسری خودکار توسط get_gateway اعمال می‌شود؛ نیازی به پاس‌دادن currency نیست.
+    # مبلغِ ریالیِ ارسال‌شده به بانک همان result.amount_to_send است (پایین ذخیره می‌شود).
+    amount = 30_000
     callback_url = request.build_absolute_uri(
         reverse("mypay-callback", kwargs={"slug": "saman"})
     )

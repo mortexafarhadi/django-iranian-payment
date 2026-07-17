@@ -106,15 +106,23 @@ scripts/                       # خارج از توزیع
 1. **واحد بانک همیشه ریال است.** `amount_to_send` (مرجع یکتا که به درگاه و verify
    می‌رود) همیشه ریال است و هر درگاهی که با تومان کار می‌کند (payping) تبدیل را داخل
    خودش انجام می‌دهد. **ولی واحد ورودی کاربر قابل انتخاب است** (از نسخه‌ی `0.7.0`):
-   `PaymentRequest.currency` (پیش‌فرض `Currency.RIAL`) و کلید سراسری
+   `PaymentRequest.currency` (پیش‌فرض `None` = «مشخص‌نشده») و کلید سراسری
    `IRANIAN_PAYMENT["currency"]`. تبدیل تومان→ریال (×۱۰) فقط در
    `PaymentRequest.resolve_amount()` و یک‌بار انجام می‌شود، پس درگاه‌ها دست‌نخورده
    ماندند (همه از `resolve_amount().amount_to_send` ریالی استفاده می‌کنند). مبالغ
    ذخیره‌شده در مدل `Payment` و مقادیر بازگشتی همیشه ریال‌اند؛ `currency` فقط واحد
-   ورودی را تعیین می‌کند. `start_payment` واحد را از `get_default_currency()` (خواننده‌ی
-   settings) می‌گیرد و base را ریالی در رکورد ذخیره می‌کند. fee: `rate_bps`
-   واحد‌مستقل، ولی `fixed`/`max_fee` در همان واحد ورودی و خودکار ریالی می‌شوند.
-   تست: `tests/test_currency.py`.
+   ورودی را تعیین می‌کند. **واحد سراسری در هر دو مسیر اعمال می‌شود:** `start_payment`
+   واحد را از `get_default_currency()` می‌گیرد و صریح پاس می‌دهد؛ و **`get_gateway`
+   واحد سراسری را در `initiate` به هر درخواستی که `currency=None` است تزریق می‌کند**
+   (پیش‌فرض `None` دقیقاً برای همین است — تمایز «کاربر ریال خواست» از «چیزی نگذاشت»).
+   این باگ واقعی را بست: کاربری که مسیر toolkit
+   (`get_gateway(...).initiate(PaymentRequest(amount=...))` طبق `scripts/django_*.py`)
+   را می‌رفت و `currency` نمی‌داد، تومان با ریال فرقی نداشت. حالا هر دو مسیر یکسان‌اند؛
+   `currency` صریح روی `PaymentRequest` بر تزریق سراسری اولویت دارد. هسته‌ی خالص (بدون
+   `get_gateway`) همچنان `None`→ریال می‌گیرد پس رفتار FastAPI/async دست‌نخورده است.
+   fee: `rate_bps` واحد‌مستقل، ولی `fixed`/`max_fee` در همان واحد ورودی و خودکار ریالی
+   می‌شوند. تست: `tests/test_currency.py` و `tests/test_django_integration.py`
+   (`test_get_gateway_injects_global_toman_into_toolkit_request`).
 
 2. **بدون state روی کلاس درگاه.** هر چیز موقت در متد می‌ماند یا برگردانده می‌شود.
 
