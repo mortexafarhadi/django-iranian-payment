@@ -21,12 +21,17 @@
 | **زرین‌پال** | REST/JSON | sandbox تست‌شده (تراکنش live هنوز تست نشده) | — |
 | **زیبال** | REST/JSON | sandbox تست‌شده (تراکنش live هنوز تست نشده) | — |
 | **ملت** | SOAP | ✅ **تراکنش live واقعی تست‌شده** | `[soap]` (zeep) |
+| **سامان (SEP)** | REST/JSON | ✅ **تراکنش واقعی با ترمینال واقعی تست‌شده** | — |
 
 > ⚠️ هشدار صداقت: «sandbox تست‌شده» یعنی روند با ترمینال آزمایشی کار کرد، نه اینکه
 > با ترمینال/قرارداد واقعی پول جابه‌جا شده باشد. زرین‌پال/زیبال هنوز تراکنش live
 > نشده‌اند. **ملت** اما با ترمینال/قرارداد واقعی روی محیط عملیاتی (bpm.shaparak.ir)
 > تست شد: تراکنش موفق (ResCode=0، SaleReferenceId، CardHolderPan، FinalAmount) و
-> سناریوی کنسل کاربر (ResCode=17) هر دو تأیید شدند.
+> سناریوی کنسل کاربر (ResCode=17) هر دو تأیید شدند. **سامان** هم با **تراکنش واقعی
+> روی ترمینال واقعی** تست و به registry عمومی منتقل شد (نسخه‌ی `1.0.0`).
+>
+> ⛔ **سامان و ملت sandbox واقعی ندارند** و `sandbox=True` را با خطا رد می‌کنند
+> ([جزئیات](#sandbox-مجزای-هر-درگاه)). فقط live‌اند.
 
 > ⚠️ **ملت** نیاز به `zeep` دارد: `pip install "django-iranian-payment[soap]"`.
 > ملت دومرحله‌ای است؛ حالت پیش‌فرض `verify_settle` (تأیید+واریز اتمیک) توصیه می‌شود.
@@ -47,7 +52,6 @@ script سندباکسشان هم انجام نشده است.
 `get_gateway` در دسترس نیستند؛ فقط با import صریح:
 
 ```python
-from django_iranian_payment.core.experimental.saman import SamanGateway
 from django_iranian_payment.core.experimental.irankish import IrankishGateway
 from django_iranian_payment.core.experimental.nextpay import NextPayGateway
 from django_iranian_payment.core.experimental.sadad import SadadGateway
@@ -56,14 +60,14 @@ from django_iranian_payment.core.experimental.digipay import DigipayGateway
 
 | درگاه | نوع | رمزنگاری | وابستگی اختیاری |
 |-------|-----|----------|------------------|
-| **سامان (SEP)** | REST/JSON | — | — |
 | **ایران‌کیش** | REST/JSON | AES + RSA | `[irankish]` |
 | **نکست‌پی** | REST/JSON | — | — |
 | **سداد** | REST/JSON (WebApi) | 3DES | `[sadad]` |
 | **دیجی‌پی** | REST/JSON (OAuth2) | — | — |
 
-> ℹ️ **ملت** پیش‌تر تجربی بود؛ پس از تست تراکنش واقعی به registry عمومی منتقل شد
-> (بالاتر را ببین). دیگر از `core.experimental` import نمی‌شود.
+> ℹ️ **ملت** و **سامان** پیش‌تر تجربی بودند؛ پس از تست تراکنش واقعی به registry
+> عمومی منتقل شدند (بالاتر را ببین). دیگر از `core.experimental` import نمی‌شوند و
+> مستقیم با `get_gateway("mellat")` / `get_gateway("saman")` در دسترس‌اند.
 
 > **ایران‌کیش** و **سداد** به وابستگی رمزنگاری نیاز دارند:
 > `pip install "django-iranian-payment[irankish]"` (شامل `pycryptodome` و `rsa`) یا
@@ -186,10 +190,10 @@ get_gateway(..., sandbox=...)  >  config درگاه  >  "sandbox" سراسری  
 [سداد](docs/gateways/sadad.md) ·
 [دیجی‌پی](docs/gateways/digipay.md).
 
-> توجه: درگاه‌های تجربی (سامان، ایران‌کیش، ...) در registry عمومی نیستند. برای
-> استفاده‌شان با `get_gateway` و لایه‌ی Django باید یک‌بار صریحاً register شوند
-> (روش بالا را ببین). درگاه‌های registry عمومی (زرین‌پال، زیبال، ملت) به این ثبت
-> نیاز ندارند و مستقیم با `get_gateway("slug")` در دسترس‌اند.
+> توجه: درگاه‌های تجربی (ایران‌کیش، نکست‌پی، سداد، دیجی‌پی) در registry عمومی نیستند.
+> برای استفاده‌شان با `get_gateway` و لایه‌ی Django باید یک‌بار صریحاً register شوند
+> (روش بالا را ببین). درگاه‌های registry عمومی (زرین‌پال، زیبال، ملت، سامان) به این
+> ثبت نیاز ندارند و مستقیم با `get_gateway("slug")` در دسترس‌اند.
 
 برای استفاده از لایه‌ی ساده (مدل و ردیابی خودکار)، اپ را هم اضافه کن:
 
@@ -349,7 +353,7 @@ gw.verify(authority=ref_id, amount=amount, order_id=oid,
           extra={"sale_reference_id": "...", "sale_order_id": "...",
                  "card_number": "...", "res_code": "0"})
 
-# سامان (تجربی): به RefNum نیاز دارد
+# سامان (registry عمومی): به RefNum نیاز دارد
 gw.verify(authority=token, amount=amount, order_id=oid,
           extra={"ref_num": "...", "state": "OK"})
 
@@ -406,11 +410,12 @@ PaymentRequest(amount=100_000, callback_url="...", order_id="1", fee=fee)
 آن لحظه با `get_gateway` در دسترس نیستند و فقط با import صریح قابل دسترسی‌اند:
 
 ```python
-from django_iranian_payment.core.experimental.saman import SamanGateway
+from django_iranian_payment.core.experimental.sadad import SadadGateway
 ```
 
-نمونه‌ی واقعی این ارتقا: **ملت** که پس از تست تراکنش live از `core.experimental` به
-`core.gateways` منتقل شد و حالا با `get_gateway("mellat")` در دسترس است.
+نمونه‌ی واقعی این ارتقا: **ملت** و **سامان** که پس از تست تراکنش واقعی از
+`core.experimental` به `core.gateways` منتقل شدند و حالا با `get_gateway("mellat")` /
+`get_gateway("saman")` در دسترس‌اند.
 
 ---
 

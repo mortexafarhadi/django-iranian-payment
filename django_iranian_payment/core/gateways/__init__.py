@@ -6,7 +6,7 @@ registry عمومی — فقط درگاه‌های تست‌شده و پایدا
 - mellat: SOAP، تست تراکنش واقعی موفق روی محیط عملیاتی (bpm.shaparak.ir).
   برای فراخوانی به zeep نیاز دارد: pip install "django-iranian-payment[soap]".
 - saman: REST/JSON (SEP)، تست تراکنش واقعی موفق با ترمینال واقعی.
-  URL سندباکس جدا ندارد؛ فلگ sandbox بی‌اثر است.
+  sandbox واقعی ندارد (supports_sandbox=False)؛ sandbox=True خطا می‌دهد.
 
 درگاه‌های معلق (کد سالم، ولی سرویس بی‌ثبات/از کار افتاده) در experimental هستند:
 - pay_ir: بی‌ثباتی شبکهٔ پرداخت پی.
