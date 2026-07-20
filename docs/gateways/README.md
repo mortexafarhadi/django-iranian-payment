@@ -49,8 +49,8 @@ IRANIAN_PAYMENT = {
 
 | درگاه | وضعیت | sandbox مجزا؟ | وابستگی اختیاری | راهنما |
 |-------|-------|---------------|------------------|--------|
-| زرین‌پال | ✅ registry عمومی (sandbox تست‌شده) | بله (`sandbox.zarinpal.com`) | — | [zarinpal.md](zarinpal.md) |
-| زیبال | ✅ registry عمومی (sandbox تست‌شده) | با `merchant="zibal"` | — | [zibal.md](zibal.md) |
+| زرین‌پال | ✅ registry عمومی (**sandbox + تراکنش واقعی تست‌شده**) | بله (`sandbox.zarinpal.com`) | — | [zarinpal.md](zarinpal.md) |
+| زیبال | ✅ registry عمومی (**sandbox + تراکنش واقعی تست‌شده**) | با `merchant="zibal"` | — | [zibal.md](zibal.md) |
 | ملت | ✅ registry عمومی (**تراکنش live تست‌شده**) | ❌ ندارد — `sandbox=True` **خطا** می‌دهد | `[soap]` | [mellat.md](mellat.md) |
 | سامان (SEP) | ✅ registry عمومی (**تراکنش واقعی تست‌شده**) | ❌ ندارد — `sandbox=True` **خطا** می‌دهد | — | [saman.md](saman.md) |
 | ایران‌کیش | ⚠️ تجربی (تست‌نشده) | ندارد | `[irankish]` | [irankish.md](irankish.md) |
@@ -108,6 +108,11 @@ IRANIAN_PAYMENT = {
 > }
 > ```
 > </div>
+>
+> **گارد startup:** اگر اپ `django_iranian_payment.contrib.django` در `INSTALLED_APPS`
+> باشد، یک Django system check این تناقض را در startup می‌گیرد و `manage.py runserver`
+> با خطای `iranian_payment.E001` **اجرا نمی‌شود**. در حالت مدیریت دستی DB، همان خطا
+> هنگام اولین `get_gateway("saman"/"mellat")` رخ می‌دهد.
 
 ## در دسترس نبودن درگاه هنگام verify (مهم — برای همه‌ی درگاه‌ها)
 

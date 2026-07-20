@@ -171,6 +171,15 @@ scripts/                       # خارج از توزیع
     /`test_mellat_sandbox_true_raises_via_get_gateway`/
     `test_saman_inherits_global_sandbox_true_raises`/
     `test_saman_with_explicit_sandbox_false_works_under_global_true`
+    (test_django_integration.py). **گارد startup:** چک سازنده lazy است (فقط هنگام
+    `get_gateway` اجرا می‌شود)، پس `runserver` بی‌خطا بالا می‌آمد. برای همین یک
+    **Django system check** (`check_no_sandbox_gateways` در `contrib/django/apps.py`،
+    ثبت در `ready()`) پیکربندی را در startup می‌خواند و اگر درگاهی با
+    `supports_sandbox=False` در حالت sandbox باشد `Error` سطح `iranian_payment.E001`
+    می‌دهد تا `manage.py`/`runserver` اجرا نشود. این چک عام است (از `supports_sandbox`
+    کلاس رجیستری می‌خواند، نه hardcode). فعال فقط وقتی اپ در `INSTALLED_APPS` باشد؛
+    حالت مدیریت دستی DB همان خطا را از سازنده هنگام اولین `get_gateway` می‌گیرد. تست:
+    `test_system_check_flags_saman_sandbox_true` و بقیه‌ی `test_system_check_*`
     (test_django_integration.py).
 
 9. **کارمزد:** نرخ به bps (۲٪ = ۲۰۰)، گرد رو به بالا (ceil)، بدون float. تابع
@@ -326,8 +335,8 @@ uv run python scripts/test_digipay.py verify <TRACKING_CODE> <AMOUNT>
   - راهنمای کامل هر درگاه برای هر دو حالت مدیریت دیتابیس در `docs/gateways/` اضافه شد.
 
 - ✅ هسته‌ی بدون state، ۴ درگاه در registry عمومی:
-  - zarinpal/zibal (REST، sandbox باز، از هر IP قابل تست). توجه: فقط sandbox تست
-    شده — **تراکنش live این دو هنوز تست نشده**.
+  - zarinpal/zibal (REST، sandbox باز، از هر IP قابل تست). ✅ **هم در sandbox و هم
+    با تراکنش واقعی تست شده‌اند.**
   - **saman** (SEP، REST/JSON): با **تراکنش واقعی روی ترمینال واقعی** تست شد و طبق
     قانون طلایی به registry عمومی منتقل شد (نسخه‌ی `1.0.0`). توکن → redirect (فرم
     POST با فیلد `Token`) → callback POST → VerifyTransaction. verify به `RefNum`
@@ -376,11 +385,11 @@ uv run python scripts/test_digipay.py verify <TRACKING_CODE> <AMOUNT>
 - ✅ لایه‌ی Django: مدل، state machine، سرویس، view، url، migration — ۸ تست.
 - ✅ تست view با Django TestClient (جریان کامل callback→redirect) — ۷ تست.
 - ✅ سوییت تست خودکار سبز (تعداد دقیق را با pytest بگیر، نه از این مستند — بخش ۶).
-- ⚠️ هنوز **هیچ تراکنش واقعی برای درگاه‌های تجربی تست نشده** — فقط منطق با
-  InMemoryTransport و monkeypatch. zarinpal/zibal تست script سندباکس دارند و
-  mellat/saman تست تراکنش واقعی دارند (هر چهار در registry عمومی). سداد/ایران‌کیش/
-  نکست‌پی/دیجی‌پی به‌دلیل محدودیت‌های دسترسی حتی تست script سندباکسشان هم انجام نشده
-  و کدشان صرفاً از روی مستندات رسمی نوشته شده است.
+- ✅ **هر چهار درگاه registry عمومی با تراکنش واقعی تست شده‌اند:** zarinpal/زیبال هم
+  در sandbox و هم با تراکنش واقعی؛ mellat/saman با تراکنش واقعی (sandbox ندارند).
+- ⚠️ درگاه‌های **تجربی** (سداد/ایران‌کیش/نکست‌پی/دیجی‌پی) هنوز **هیچ تراکنش واقعی
+  تست نشده** — فقط منطق با InMemoryTransport و monkeypatch. به‌دلیل محدودیت‌های دسترسی
+  حتی تست script سندباکسشان هم انجام نشده و کدشان صرفاً از روی مستندات رسمی است.
 - ⬜ درگاه‌های تجربیِ باقی‌مانده اسکلت‌اند (منتظر مستندات واقعی هر بانک).
 - ⬜ celery/cron برای reverify_pending در مستندات هست ولی نمونه‌ی آماده ندارد.
 
