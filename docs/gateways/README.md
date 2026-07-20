@@ -111,8 +111,12 @@ IRANIAN_PAYMENT = {
 >
 > **گارد startup:** اگر اپ `django_iranian_payment.contrib.django` در `INSTALLED_APPS`
 > باشد، یک Django system check این تناقض را در startup می‌گیرد و `manage.py runserver`
-> با خطای `iranian_payment.E001` **اجرا نمی‌شود**. در حالت مدیریت دستی DB، همان خطا
-> هنگام اولین `get_gateway("saman"/"mellat")` رخ می‌دهد.
+> با خطای `iranian_payment.E001` **اجرا نمی‌شود**.
+>
+> در **حالت مدیریت دستی DB** (اپ کامل نصب نیست) این چک اجرا نمی‌شود و `runserver`
+> بی‌صدا بالا می‌آید؛ خطا فقط هنگام اولین `get_gateway("saman"/"mellat")` می‌آید. برای
+> گارد startup در این حالت، اپ سبک `"django_iranian_payment.contrib.guard"` را به
+> `INSTALLED_APPS` اضافه کن — بدون model/migration، فقط همین system check.
 
 ## در دسترس نبودن درگاه هنگام verify (مهم — برای همه‌ی درگاه‌ها)
 

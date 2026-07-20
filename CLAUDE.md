@@ -177,10 +177,16 @@ scripts/                       # خارج از توزیع
     ثبت در `ready()`) پیکربندی را در startup می‌خواند و اگر درگاهی با
     `supports_sandbox=False` در حالت sandbox باشد `Error` سطح `iranian_payment.E001`
     می‌دهد تا `manage.py`/`runserver` اجرا نشود. این چک عام است (از `supports_sandbox`
-    کلاس رجیستری می‌خواند، نه hardcode). فعال فقط وقتی اپ در `INSTALLED_APPS` باشد؛
-    حالت مدیریت دستی DB همان خطا را از سازنده هنگام اولین `get_gateway` می‌گیرد. تست:
-    `test_system_check_flags_saman_sandbox_true` و بقیه‌ی `test_system_check_*`
-    (test_django_integration.py).
+    کلاس رجیستری می‌خواند، نه hardcode). فعال فقط وقتی اپی که این چک را ثبت می‌کند در
+    `INSTALLED_APPS` باشد. **حالت مدیریت دستی DB** اپ کامل contrib.django را نصب
+    نمی‌کند، پس چک اجرا نمی‌شد و `runserver` با sandbox=True بی‌صدا بالا می‌آمد؛ برای
+    همین اپ سبک `django_iranian_payment.contrib.guard` (فقط `AppConfig`، بدون
+    model/migration) ساخته شد که همان تابع چک را ثبت می‌کند — کاربر mode-2 آن را به
+    `INSTALLED_APPS` می‌افزاید. چون هر دو اپ **همان شیء تابع** را register می‌کنند و
+    رجیستری چک‌های Django یک set است، ثبت دوگانه دوباره‌کاری نمی‌سازد. اگر هیچ‌کدام
+    نصب نباشد، خطا از سازنده هنگام اولین `get_gateway` می‌آید. تست:
+    `test_system_check_flags_saman_sandbox_true`، بقیه‌ی `test_system_check_*` و
+    `test_guard_app_reuses_same_check_object` (test_django_integration.py).
 
 9. **کارمزد:** نرخ به bps (۲٪ = ۲۰۰)، گرد رو به بالا (ceil)، بدون float. تابع
    `apply_fee` خالص است و در `core/fee.py` تست کامل دارد.

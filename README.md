@@ -179,8 +179,18 @@ get_gateway(..., sandbox=...)  >  config درگاه  >  "sandbox" سراسری  
 > اگر اپ `django_iranian_payment.contrib.django` در `INSTALLED_APPS` باشد، این تناقض
 > با یک **Django system check** در startup گرفته می‌شود: `manage.py runserver` (و هر
 > `manage.py`) با خطای `iranian_payment.E001` **اجرا نمی‌شود** تا اصلاحش کنی — نه اینکه
-> بی‌صدا به live وصل شوی. در حالت مدیریت دستی DB (بدون این اپ)، همان خطا هنگام اولین
-> `get_gateway("saman"/"mellat")` رخ می‌دهد.
+> بی‌صدا به live وصل شوی.
+>
+> **حالت مدیریت دستی DB** (اپ کامل را نصب نمی‌کنی): این system check اجرا نمی‌شود و
+> `runserver` بی‌صدا بالا می‌آید (خطا فقط هنگام اولین `get_gateway`). برای گارد startup
+> اپ سبک زیر را اضافه کن — بدون model و migration، فقط همین چک:
+>
+> ```python
+> INSTALLED_APPS = [
+>     # ...
+>     "django_iranian_payment.contrib.guard",
+> ]
+> ```
 
 ### راهنمای کامل هر درگاه
 

@@ -185,6 +185,14 @@ def test_system_check_no_settings_is_ok():
     assert check_no_sandbox_gateways(None) == []
 
 
+def test_guard_app_reuses_same_check_object():
+    # اپ سبک contrib.guard (برای حالت مدیریت دستی DB) همان تابع چک را ثبت می‌کند.
+    # شیء یکسان یعنی ثبت دوباره در رجیستری set دوباره‌کاری نمی‌کند.
+    from django_iranian_payment.contrib.guard import apps as guard_apps
+
+    assert guard_apps.check_no_sandbox_gateways is check_no_sandbox_gateways
+
+
 @override_settings(
     IRANIAN_PAYMENT={
         "sandbox": False,

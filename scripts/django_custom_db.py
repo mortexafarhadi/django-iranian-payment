@@ -66,10 +66,21 @@ start_payment/verify_payment + view و url داخلی). این فایل حالت
 
     # settings.py — توجه: اپ contrib.django لازم نیست به INSTALLED_APPS برود.
     # فقط بلوک config درگاه‌ها را بده؛ get_gateway از همین می‌خواند.
+    #
     # ⛔ سامان و ملت sandbox واقعی ندارند: اگر "sandbox" سراسری True باشد و برای این
     # دو صریحاً "sandbox": False نگذاری، get_gateway("saman"/"mellat") با
-    # GatewayConfigurationError خطا می‌دهد و اجرا نمی‌شود (عمدی). پس اینجا برایشان
-    # "sandbox": False گذاشته‌ایم. زرین‌پال/دیجی‌پی sandbox واقعی دارند.
+    # GatewayConfigurationError خطا می‌دهد. پس اینجا برایشان "sandbox": False گذاشته‌ایم.
+    # زرین‌پال/دیجی‌پی sandbox واقعی دارند.
+    #
+    # ⚠️ گارد startup در حالت مدیریت دستی DB: چون اپ کامل contrib.django را نصب
+    # نمی‌کنی، system check درگاه‌های بدون sandbox اجرا نمی‌شود و runserver با
+    # sandbox=True روی سامان/ملت بی‌صدا بالا می‌آید (خطا فقط هنگام اولین get_gateway).
+    # برای اینکه پروژه در startup متوقف شود، اپ سبک زیر را اضافه کن (بدون model/migration):
+    INSTALLED_APPS = [
+        # ...
+        "django_iranian_payment.contrib.guard",  # فقط system check؛ نه model نه migration
+    ]
+
     IRANIAN_PAYMENT = {
         "currency": "rial",   # واحد ورودی مبلغ: "rial" (پیش‌فرض) یا "toman"
         "sandbox": True,   # False در production
