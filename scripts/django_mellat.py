@@ -7,11 +7,13 @@
 کاربر باید با فرم HTML (POST) به صفحه‌ی پرداخت فرستاده شود، نه redirect ساده.
 پکیج این فرم را به‌صورت خودکار در view go_to_gateway می‌سازد.
 
-⚠️ وضعیت: تجربی (experimental) — کد کامل از مستند نگارش ۱.۳۸، ولی هنوز با
-ترمینال/sandbox واقعی تأیید نشده. برای استفاده در production نیاز به:
-  ۱. قرارداد پذیرندگی با بانک ملت
+✅ وضعیت: در registry عمومی (core/gateways/mellat.py) — پس از **تست تراکنش واقعی
+روی محیط عملیاتی** منتقل شد. get_gateway("mellat") مستقیم کار می‌کند (نیازی به
+register دستی نیست). ملت sandbox واقعی ندارد و فقط live است. برای production:
+  ۱. قرارداد پذیرندگی با بانک ملت + ترمینال/username/password واقعی
   ۲. ثبت IP سرور نزد ملت (نامه‌ی رسمی)
   ۳. دسترسی شبکه به bpm.shaparak.ir از داخل ایران
+  ۴. نصب zeep: pip install "django-iranian-payment[soap]"
 
 ━━ قدم ۱: نصب پکیج و وابستگی SOAP ━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -44,34 +46,24 @@
                 "password": "your-password",     # رمز از ملت
                 "settle_mode": "verify_settle",  # توصیه: تأیید+واریز اتمیک
                 # یا "verify_only" برای verify جداگانه (نیاز به settle() بعداً)
-                "sandbox": True,   # ← sandbox مجزای ملت (pgw.dev.bpmellat.ir)
-                # False = محیط عملیاتی (bpm.shaparak.ir). با این کلید می‌توانی ملت
-                # را sandbox بگذاری و درگاه دیگری را live، هم‌زمان.
-                # ⚠️ در عمل sandbox ملت پاسخ‌گو نبود؛ تست واقعی روی live انجام شد.
+                # ⛔ ملت sandbox واقعی ندارد. "sandbox": True (اینجا یا ارث از
+                # سراسری) باعث GatewayConfigurationError می‌شود و برنامه اجرا
+                # نمی‌شود. ملت فقط live است (bpm.shaparak.ir). اگر sandbox سراسری
+                # True است، اینجا صریحاً "sandbox": False بگذار.
             },
         },
     }
 
-    # sandbox مجزای هر درگاه: کلید "sandbox" داخل config درگاه بر مقدار سراسری
-    # اولویت دارد (اولویت کامل: آرگومان get_gateway > config درگاه > سراسری > False).
+    # ⛔ ملت sandbox واقعی ندارد: اگر "sandbox" این درگاه (مستقیم یا از ارث سراسری)
+    # True شود، ساخت درگاه GatewayConfigurationError می‌دهد و برنامه اجرا نمی‌شود.
+    # ملت همیشه live است؛ اگر sandbox سراسری True است برای ملت "sandbox": False بگذار.
 
-━━ قدم ۳: ثبت درگاه ملت در registry پکیج ━━━━━━━━━━━━━━━━━━
+━━ قدم ۳: (نیازی نیست) ملت در registry عمومی است ━━━━━━━━━━
 
-    ملت در registry عمومی نیست (تجربی است). برای استفاده از لایه‌ی Django
-    پکیج (services) باید آن را موقتاً register کنی. این کار را در
-    AppConfig.ready() app خودت انجام بده:
-
-    # yourapp/apps.py
-    from django.apps import AppConfig
-
-    class YourAppConfig(AppConfig):
-        name = "yourapp"
-
-        def ready(self):
-            # ثبت درگاه ملت در registry پکیج
-            from django_iranian_payment.core.gateways import _REGISTRY
-            from django_iranian_payment.core.experimental.mellat import MellatGateway
-            _REGISTRY["mellat"] = MellatGateway
+    ملت پس از تست تراکنش واقعی روی محیط عملیاتی به registry عمومی منتقل شد
+    (core/gateways/mellat.py). پس get_gateway("mellat") مستقیم کار می‌کند و
+    نیازی به register دستی نیست. فقط zeep لازم است:
+        pip install "django-iranian-payment[soap]"
 
 ━━ قدم ۴: URL های پکیج ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -387,6 +379,6 @@ def reverify_pending():
 if __name__ == "__main__":
     print(
         "این فایل راهنمای یکپارچه‌سازی Django درگاه ملت است.\n"
-        "برای تست sandbox core: uv run python scripts/test_mellat.py\n"
-        "⚠️  تست sandbox ملت نیاز به IP ثبت‌شده نزد بانک دارد."
+        "برای تست core: uv run python scripts/test_mellat.py\n"
+        "⛔ ملت sandbox ندارد (sandbox=True خطا می‌دهد)؛ تست فقط live با IP ثبت‌شده."
     )

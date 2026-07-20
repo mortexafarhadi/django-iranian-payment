@@ -22,7 +22,15 @@ CONF = {"terminal_id": "1234", "username": "user", "password": "pass"}
 
 def _gw(transport, **extra_conf):
     conf = {**CONF, **extra_conf}
-    return MellatGateway(conf, sandbox=True, transport=transport)
+    # ملت sandbox ندارد؛ همیشه live (sandbox=True خطا می‌دهد — تست جداگانه پایین).
+    return MellatGateway(conf, sandbox=False, transport=transport)
+
+
+def test_mellat_rejects_sandbox_true():
+    # رگرسیون: ملت sandbox واقعی ندارد؛ sandbox=True باید صریح خطا بدهد نه اینکه
+    # بی‌صدا به live وصل شود و کاربر گمان کند در محیط تست است.
+    with pytest.raises(GatewayConfigurationError):
+        MellatGateway(CONF, sandbox=True, transport=InMemoryTransport({}))
 
 
 # ---------- initiate ----------

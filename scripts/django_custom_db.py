@@ -66,6 +66,10 @@ start_payment/verify_payment + view و url داخلی). این فایل حالت
 
     # settings.py — توجه: اپ contrib.django لازم نیست به INSTALLED_APPS برود.
     # فقط بلوک config درگاه‌ها را بده؛ get_gateway از همین می‌خواند.
+    # ⛔ سامان و ملت sandbox واقعی ندارند: اگر "sandbox" سراسری True باشد و برای این
+    # دو صریحاً "sandbox": False نگذاری، get_gateway("saman"/"mellat") با
+    # GatewayConfigurationError خطا می‌دهد و اجرا نمی‌شود (عمدی). پس اینجا برایشان
+    # "sandbox": False گذاشته‌ایم. زرین‌پال/دیجی‌پی sandbox واقعی دارند.
     IRANIAN_PAYMENT = {
         "currency": "rial",   # واحد ورودی مبلغ: "rial" (پیش‌فرض) یا "toman"
         "sandbox": True,   # False در production
@@ -73,8 +77,8 @@ start_payment/verify_payment + view و url داخلی). این فایل حالت
             "zarinpal": {"merchant_id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"},
             "zibal":    {"merchant_id": "zibal"},
             "mellat":   {"terminal_id": "...", "username": "...", "password": "...",
-                          "settle_mode": "verify_settle"},
-            "saman":    {"terminal_id": "..."},
+                          "settle_mode": "verify_settle", "sandbox": False},  # اجباری
+            "saman":    {"terminal_id": "...", "sandbox": False},  # اجباری (sandbox ندارد)
             "irankish": {"terminal_id": "...", "acceptor_id": "...",
                           "pass_phrase": "...", "public_key": "/path/to/key.pem"},
             "nextpay":  {"api_key": "..."},

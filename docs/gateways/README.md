@@ -51,8 +51,8 @@ IRANIAN_PAYMENT = {
 |-------|-------|---------------|------------------|--------|
 | زرین‌پال | ✅ registry عمومی (sandbox تست‌شده) | بله (`sandbox.zarinpal.com`) | — | [zarinpal.md](zarinpal.md) |
 | زیبال | ✅ registry عمومی (sandbox تست‌شده) | با `merchant="zibal"` | — | [zibal.md](zibal.md) |
-| ملت | ✅ registry عمومی (**تراکنش live تست‌شده**) | بله | `[soap]` | [mellat.md](mellat.md) |
-| سامان (SEP) | ✅ registry عمومی (**تراکنش واقعی تست‌شده**) | ندارد | — | [saman.md](saman.md) |
+| ملت | ✅ registry عمومی (**تراکنش live تست‌شده**) | ❌ ندارد — `sandbox=True` **خطا** می‌دهد | `[soap]` | [mellat.md](mellat.md) |
+| سامان (SEP) | ✅ registry عمومی (**تراکنش واقعی تست‌شده**) | ❌ ندارد — `sandbox=True` **خطا** می‌دهد | — | [saman.md](saman.md) |
 | ایران‌کیش | ⚠️ تجربی (تست‌نشده) | ندارد | `[irankish]` | [irankish.md](irankish.md) |
 | نکست‌پی | ⚠️ تجربی (تست‌نشده) | ندارد | — | [nextpay.md](nextpay.md) |
 | سداد | ⚠️ تجربی (تست‌نشده) | ندارد | `[sadad]` | [sadad.md](sadad.md) |
@@ -83,9 +83,31 @@ IRANIAN_PAYMENT = {
 
 اولویت کامل: آرگومان `get_gateway(..., sandbox=...)` ← config درگاه ← `sandbox` سراسری ← `False`.
 
-نکته: فقط درگاه‌هایی که URL سندباکس جدا دارند (زرین‌پال، ملت، دیجی‌پی) به این فلگ
-واکنش می‌دهند. زیبال با `merchant="zibal"` و سامان/ایران‌کیش/نکست‌پی/سداد اصلاً
-URL سندباکس جدا ندارند (در راهنمای هرکدام ذکر شده).
+نکته: فقط درگاه‌هایی که URL سندباکس جدا دارند (زرین‌پال، دیجی‌پی) به این فلگ واکنش
+می‌دهند. زیبال با `merchant="zibal"` و ایران‌کیش/نکست‌پی/سداد اصلاً URL سندباکس جدا
+ندارند (فلگ برایشان بی‌اثر است).
+
+> ⛔ **سامان و ملت sandbox واقعی ندارند و `sandbox=True` را رد می‌کنند.** اگر برای این
+> دو درگاه `sandbox` به‌صورت مستقیم یا از راه ارث‌بریِ `sandbox` سراسری `True` شود،
+> ساخت درگاه با `GatewayConfigurationError` **خطا می‌دهد و برنامه اجرا نمی‌شود** (عمدی:
+> تا کاربر گمان نکند در محیط تست است در حالی که به‌واقع به درگاه live وصل می‌شود). اگر
+> `sandbox` سراسری `True` گذاشته‌ای (برای تست زرین‌پال و ...)، برای سامان/ملت صریحاً
+> `"sandbox": False` بگذار:
+>
+> <div dir="ltr">
+>
+> ```python
+> IRANIAN_PAYMENT = {
+>     "sandbox": True,  # سراسری
+>     "gateways": {
+>         "zarinpal": {"merchant_id": "..."},                 # sandbox (از سراسری)
+>         "saman":    {"terminal_id": "...", "sandbox": False},  # اجباری: ملت/سامان live
+>         "mellat":   {"terminal_id": "...", "username": "...",
+>                      "password": "...", "sandbox": False},
+>     },
+> }
+> ```
+> </div>
 
 ## در دسترس نبودن درگاه هنگام verify (مهم — برای همه‌ی درگاه‌ها)
 

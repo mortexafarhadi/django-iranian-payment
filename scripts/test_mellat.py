@@ -7,7 +7,8 @@
 و مقادیر واقعی terminal_id/username/password که IP سرورت نزد ملت ثبت شده باشد
 (بدون ثبت IP، سرور درخواست را رد می‌کند — کد پاسخ 421).
 
-سرور تست: pgw.dev.bpmellat.ir   |   سرور عملیاتی: bpm.shaparak.ir
+سرور: bpm.shaparak.ir (عملیاتی). ⛔ ملت sandbox قابل‌استفاده ندارد؛ درگاه
+sandbox=True را رد می‌کند (GatewayConfigurationError). تست فقط روی live.
 
 جریان (طبق مستند):
   ۱. initiate → bpPayRequest → خروجی "ResCode,RefId". اگر ResCode=0، یک فرم
@@ -31,7 +32,7 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from django_iranian_payment.core.experimental.mellat import MellatGateway
+from django_iranian_payment.core.gateways.mellat import MellatGateway
 from django_iranian_payment.core.models import PaymentRequest
 from django_iranian_payment.core.exceptions import GatewayError
 
@@ -46,7 +47,9 @@ CONFIG = {
     "password": PASSWORD,
     "settle_mode": SETTLE_MODE,
 }
-SANDBOX = True  # True = pgw.dev.bpmellat.ir
+SANDBOX = (
+    False  # ⛔ ملت sandbox ندارد؛ SANDBOX=True خطا می‌دهد. فقط live (bpm.shaparak.ir).
+)
 AMOUNT = 10_000  # ریال
 CALLBACK = "https://example.com/callback/"  # باید در دامنه‌ی ثبت‌شده باشد
 ORDER_ID = "1001"  # ملت orderId عددی می‌خواهد (یکتا)

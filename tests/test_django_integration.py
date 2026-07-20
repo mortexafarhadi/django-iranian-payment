@@ -6,9 +6,11 @@
 conftest استفاده می‌کنیم.
 """
 
+import pytest
 from django.test import override_settings
 
 from django_iranian_payment import get_gateway
+from django_iranian_payment.core.exceptions import GatewayConfigurationError
 
 
 @override_settings(
@@ -55,6 +57,62 @@ def test_default_is_live_when_nothing_set():
     # نه سراسری نه درگاه → پیش‌فرض False (live).
     gw = get_gateway("zarinpal")
     assert gw.sandbox is False
+
+
+# ── درگاه‌های بدون sandbox: sandbox=True باید خطا بدهد (سامان/ملت) ──────────
+
+
+@override_settings(
+    IRANIAN_PAYMENT={
+        "gateways": {"saman": {"terminal_id": "t", "sandbox": True}},
+    }
+)
+def test_saman_sandbox_true_raises_via_get_gateway():
+    # رگرسیون: سامان sandbox ندارد؛ config درگاه sandbox=True → خطای صریح.
+    with pytest.raises(GatewayConfigurationError):
+        get_gateway("saman")
+
+
+@override_settings(
+    IRANIAN_PAYMENT={
+        "sandbox": True,  # سراسری True؛ سامان صریحاً override نکرده
+        "gateways": {"saman": {"terminal_id": "t"}},
+    }
+)
+def test_saman_inherits_global_sandbox_true_raises():
+    # سامان sandbox سراسری True را ارث می‌برد → همان خطا. راه‌حل: sandbox=False صریح.
+    with pytest.raises(GatewayConfigurationError):
+        get_gateway("saman")
+
+
+@override_settings(
+    IRANIAN_PAYMENT={
+        "sandbox": True,
+        "gateways": {"saman": {"terminal_id": "t", "sandbox": False}},
+    }
+)
+def test_saman_with_explicit_sandbox_false_works_under_global_true():
+    # راه درست: sandbox این درگاه را False کن تا با وجود sandbox سراسری True کار کند.
+    gw = get_gateway("saman")
+    assert gw.sandbox is False
+
+
+@override_settings(
+    IRANIAN_PAYMENT={
+        "gateways": {
+            "mellat": {
+                "terminal_id": "t",
+                "username": "u",
+                "password": "p",
+                "sandbox": True,
+            }
+        },
+    }
+)
+def test_mellat_sandbox_true_raises_via_get_gateway():
+    # رگرسیون: ملت هم sandbox ندارد؛ sandbox=True → خطای صریح.
+    with pytest.raises(GatewayConfigurationError):
+        get_gateway("mellat")
 
 
 @override_settings(

@@ -117,6 +117,10 @@ class InMemoryTransport(BaseTransport):
 class BaseGateway(ABC):
     slug: str = None  # شناسه‌ی متنی یکتا، مثل "zarinpal"
     requires: tuple = ()  # کلیدهای اجباری config، برای اعتبارسنجی
+    # آیا این درگاه محیط sandbox واقعی و قابل‌استفاده دارد؟ درگاه‌هایی که ندارند
+    # (سامان، ملت) این را False می‌کنند؛ آن‌گاه sandbox=True خطای صریح می‌دهد تا
+    # کاربر گمان نکند در محیط تست است در حالی که به‌واقع به درگاه live وصل می‌شود.
+    supports_sandbox: bool = True
 
     def __init__(
         self,
@@ -126,6 +130,14 @@ class BaseGateway(ABC):
         timeout: int = 15,
         transport: BaseTransport = None,
     ):
+        if sandbox and not self.supports_sandbox:
+            raise GatewayConfigurationError(
+                f"درگاه {self.slug} محیط sandbox ندارد؛ sandbox=True پشتیبانی نمی‌شود. "
+                f"این درگاه فقط live است. در تنظیمات، sandbox این درگاه را False کن "
+                f'(یا کلید "sandbox" را از config آن حذف کن). اگر sandbox سراسری True '
+                f'است، برای این درگاه صریحاً "sandbox": False بگذار.',
+                gateway=self.slug,
+            )
         self.config = config
         self.sandbox = sandbox
         self.timeout = timeout

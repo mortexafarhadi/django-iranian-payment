@@ -36,7 +36,7 @@ from django_iranian_payment.core.exceptions import GatewayError  # noqa: E402
 # --- پیکربندی (پر کن) ---
 TERMINAL_ID = "0000"  # TODO: شماره ترمینال واقعی از سامان
 CONFIG = {"terminal_id": TERMINAL_ID}
-SANDBOX = True
+SANDBOX = False  # ⛔ سامان sandbox ندارد؛ SANDBOX=True خطا می‌دهد. فقط live.
 AMOUNT = 12_000  # ریال
 CALLBACK = "https://example.com/callback/"  # باید با RedirectUrl ثبت‌شده بخواند
 ORDER_ID = "TEST-SAMAN-001"  # همان ResNum

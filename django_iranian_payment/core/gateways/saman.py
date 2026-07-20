@@ -92,6 +92,7 @@ _NEO_PG_ALIASES = {"neo_pg", "neo-pg", "neopg", "neo", "blupay", "bluepay", "ب�
 class SamanGateway(BaseGateway):
     slug = "saman"
     requires = ("terminal_id",)
+    supports_sandbox = False  # سامان sandbox جدا ندارد؛ sandbox=True خطا می‌دهد
 
     @property
     def _mode(self):

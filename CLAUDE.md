@@ -156,8 +156,22 @@ scripts/                       # خارج از توزیع
     (بدون mutate کردن دیکشنری settings کاربر). سازگار با قبل: فقط `sandbox` سراسری
     مثل قبل کار می‌کند. تست رگرسیون: `tests/test_django_integration.py`. توجه: فقط
     درگاه‌هایی که `self.sandbox` را برای سوییچ URL استفاده می‌کنند
-    (زرین‌پال/ملت/دیجی‌پی) واکنش می‌دهند؛ زیبال با `merchant="zibal"` و
-    سامان/ایران‌کیش/نکست‌پی/سداد URL سندباکس جدا ندارند (فلگ برایشان بی‌اثر است).
+    (زرین‌پال/دیجی‌پی) واکنش می‌دهند؛ زیبال با `merchant="zibal"` و
+    ایران‌کیش/نکست‌پی/سداد URL سندباکس جدا ندارند (فلگ برایشان بی‌اثر است).
+    **سامان و ملت sandbox واقعی ندارند و آن را رد می‌کنند:** روی کلاسشان
+    `supports_sandbox = False` است و `BaseGateway.__init__` اگر `sandbox=True`
+    (مستقیم یا از ارث سراسری) باشد `GatewayConfigurationError` می‌دهد و برنامه اجرا
+    نمی‌شود — عمدی، تا کاربر گمان نکند در محیط تست است در حالی که به live وصل می‌شود.
+    این جای «فلگ بی‌اثر» را برای این دو گرفت (بی‌اثر = گمراه‌کننده بود). ملت قبلاً
+    URL سندباکس `pgw.dev.bpmellat.ir` داشت ولی چون dev endpoint در عمل مرده بود و
+    تست live انجام شد، سوییچ URL حذف و به «رد کردن sandbox» تبدیل شد. راه‌حل کاربر
+    وقتی `sandbox` سراسری True است: برای سامان/ملت صریحاً `"sandbox": False`. تست
+    رگرسیون: `test_saman_rejects_sandbox_true`/`test_mellat_rejects_sandbox_true`
+    (test_saman.py/test_mellat.py) و `test_saman_sandbox_true_raises_via_get_gateway`
+    /`test_mellat_sandbox_true_raises_via_get_gateway`/
+    `test_saman_inherits_global_sandbox_true_raises`/
+    `test_saman_with_explicit_sandbox_false_works_under_global_true`
+    (test_django_integration.py).
 
 9. **کارمزد:** نرخ به bps (۲٪ = ۲۰۰)، گرد رو به بالا (ceil)، بدون float. تابع
    `apply_fee` خالص است و در `core/fee.py` تست کامل دارد.
@@ -295,8 +309,8 @@ uv run python scripts/test_digipay.py verify <TRACKING_CODE> <AMOUNT>
   `core/gateways/saman.py` منتقل و به `_REGISTRY` افزوده شد؛ حالا با
   `get_gateway("saman")` در دسترس است. دو تست رگرسیون قفلش می‌کنند:
   `test_saman_in_public_registry` و `test_saman_no_longer_in_experimental`. سامان
-  URL سندباکس جدا ندارد (فلگ sandbox بی‌اثر). دو حالت `mode`: `classic` (پیش‌فرض) و
-  `neo_pg` (بلوپی).
+  sandbox واقعی ندارد؛ `supports_sandbox=False` است و `sandbox=True` خطا می‌دهد
+  (بند ۸.۱). دو حالت `mode`: `classic` (پیش‌فرض) و `neo_pg` (بلوپی).
 
 - ✅ نسخه‌ی `0.7.0`: **انتخاب واحد پول (ریال/تومان)** با کلید سراسری
   `IRANIAN_PAYMENT["currency"]` و `PaymentRequest.currency` (بند ۱). تبدیل در

@@ -26,7 +26,14 @@ CONF = {"terminal_id": "2015"}
 
 
 def _gw(transport, **extra_conf):
-    return SamanGateway({**CONF, **extra_conf}, sandbox=True, transport=transport)
+    # سامان sandbox ندارد؛ همیشه live (sandbox=True خطا می‌دهد — تست جداگانه پایین).
+    return SamanGateway({**CONF, **extra_conf}, sandbox=False, transport=transport)
+
+
+def test_saman_rejects_sandbox_true():
+    # رگرسیون: سامان sandbox جدا ندارد؛ sandbox=True باید صریح خطا بدهد.
+    with pytest.raises(GatewayConfigurationError):
+        SamanGateway(CONF, sandbox=True, transport=InMemoryTransport({}))
 
 
 # ---------- initiate ----------

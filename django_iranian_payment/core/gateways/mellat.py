@@ -50,10 +50,10 @@ from django_iranian_payment.core.models import (
     PaymentStatus,
 )
 
+# ملت محیط sandbox قابل‌استفاده ندارد (endpoint dev در عمل پاسخ نمی‌دهد)، پس فقط
+# آدرس live داریم و supports_sandbox=False است (sandbox=True خطا می‌دهد).
 _WSDL_LIVE = "https://bpm.shaparak.ir/pgwchannel/services/pgw?wsdl"
-_WSDL_SANDBOX = "https://pgw.dev.bpmellat.ir/pgwchannel/services/pgw?wsdl"
 _STARTPAY_LIVE = "https://bpm.shaparak.ir/pgwchannel/startpay.mellat"
-_STARTPAY_SANDBOX = "https://pgw.dev.bpmellat.ir/pgwchannel/startpay.mellat"
 
 # کدهای موفقیت در توابع مختلف (طبق جدول ۱۱)
 _RES_OK = "0"
@@ -65,14 +65,15 @@ _RES_ALREADY_REVERSED = "48"  # تراکنش Reverse شده است
 class MellatGateway(BaseGateway):
     slug = "mellat"
     requires = ("terminal_id", "username", "password")
+    supports_sandbox = False  # ملت sandbox واقعی ندارد؛ sandbox=True خطا می‌دهد
 
     @property
     def _wsdl(self):
-        return _WSDL_SANDBOX if self.sandbox else _WSDL_LIVE
+        return _WSDL_LIVE
 
     @property
     def startpay_url(self):
-        return _STARTPAY_SANDBOX if self.sandbox else _STARTPAY_LIVE
+        return _STARTPAY_LIVE
 
     @property
     def _settle_mode(self):

@@ -69,6 +69,11 @@ def get_gateway(slug, *, timeout=15, transport=None, sandbox=None):
       ۲. کلید "sandbox" داخل config همان درگاه در settings
       ۳. کلید "sandbox" سراسری IRANIAN_PAYMENT (پیش‌فرض)
       ۴. در نبود همه: False (live)
+
+    ⛔ درگاه‌هایی که sandbox واقعی ندارند (سامان، ملت: supports_sandbox=False) اگر
+    sandbox برایشان True شود (مستقیم یا از ارث سراسری) در سازنده
+    GatewayConfigurationError می‌دهند. راه‌حل: برای این درگاه‌ها "sandbox": False
+    صریح بگذار وقتی sandbox سراسری True است.
     """
     conf = _get_settings()
     global_sandbox = bool(conf.get("sandbox", False))

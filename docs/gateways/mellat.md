@@ -75,9 +75,10 @@ IRANIAN_PAYMENT = {
             "password": "your-password",     # رمز از ملت
             "settle_mode": "verify_settle",  # توصیه: تأیید+واریز اتمیک
             # یا "verify_only" (نیاز به settle() جداگانه بعداً)
-            "sandbox": True,   # ← sandbox مجزای ملت (pgw.dev.bpmellat.ir)
-            # False = محیط عملیاتی (bpm.shaparak.ir).
-            # ⚠️ در عمل sandbox ملت پاسخ‌گو نبود؛ تست واقعی روی live انجام شد.
+            # ⛔ ملت sandbox واقعی ندارد. "sandbox": True (اینجا یا ارث از سراسری)
+            #    باعث GatewayConfigurationError می‌شود و برنامه اجرا نمی‌شود. ملت
+            #    فقط live است (bpm.shaparak.ir). اگر sandbox سراسری True است، اینجا
+            #    صریحاً "sandbox": False بگذار.
         },
     },
 }
@@ -266,7 +267,7 @@ IRANIAN_PAYMENT = {
             "username": "your-username",
             "password": "your-password",
             "settle_mode": "verify_settle",
-            "sandbox": True,   # sandbox مجزای ملت
+            # ⛔ ملت sandbox ندارد؛ "sandbox": True خطا می‌دهد. فقط live.
         },
     },
 }
