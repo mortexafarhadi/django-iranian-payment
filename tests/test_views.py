@@ -83,6 +83,29 @@ def test_callback_failed_redirects_with_failed_status(client, patch_verify_trans
 
 
 @pytest.mark.django_db
+def test_callback_gateway_down_redirects_pending_not_500(client, monkeypatch):
+    # رگرسیون: اگر درگاه هنگام verify بی‌پاسخ/۵۰۰ دهد، callback نباید ۵۰۰ بدهد یا
+    # رکورد را گم کند. باید pending برگرداند و رکورد RETURN_FROM_BANK بماند تا
+    # reverify_pending بعداً تمامش کند.
+    _make_redirected_payment()
+
+    from django_iranian_payment.core.base import RequestsTransport
+    from django_iranian_payment.core.exceptions import GatewayConnectionError
+
+    def boom(self, url, *, json=None, data=None, headers=None, timeout=15):
+        raise GatewayConnectionError("درگاه بی‌پاسخ")
+
+    monkeypatch.setattr(RequestsTransport, "post", boom)
+
+    resp = client.get("/payment/callback/zarinpal/", {"Authority": "AUTH1"})
+    assert resp.status_code == 302
+    assert "payment_status=pending" in resp.url
+
+    payment = Payment.objects.get(authority="AUTH1")
+    assert payment.status == PaymentStatus.RETURN_FROM_BANK
+
+
+@pytest.mark.django_db
 def test_callback_missing_authority_404(client):
     resp = client.get("/payment/callback/zarinpal/")  # بدون Authority
     assert resp.status_code == 404

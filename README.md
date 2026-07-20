@@ -251,17 +251,35 @@ https://yoursite.com/...?payment_status=success&order_id=123
 اگر می‌خواهی منطق خودت را اجرا کنی، به‌جای استفاده از callback داخلی، خودت
 `services.verify_payment(slug, authority)` را صدا بزن.
 
-### تأیید مجدد تراکنش‌های ناتمام
+### تأیید مجدد تراکنش‌های ناتمام (درگاه در دسترس نبود)
 
-گاهی کاربر از بانک برمی‌گردد ولی تأیید کامل نمی‌شود (قطع شبکه و ...). برای تأیید
-مجدد این رکوردها، در یک job دوره‌ای (cron یا celery) اجرا کن:
+گاهی کاربر از بانک برمی‌گردد ولی درگاه هنگام verify بی‌پاسخ می‌دهد یا ۵۰۰ برمی‌گرداند
+(بی‌ثباتی زرین‌پال و ...). پول ممکن است از کاربر کم شده باشد ولی تأیید نشده. این حالت
+خودکار مدیریت می‌شود:
+
+- در callback، پیش از تماس با بانک، رکورد به `RETURN_FROM_BANK` علامت می‌خورد. اگر
+  verify با خطای شبکه شکست بخورد، رکورد در همین حالت می‌ماند (نه گم می‌شود، نه
+  `expire_stale` منقضی‌اش می‌کند) و کاربر با `payment_status=pending` برمی‌گردد.
+- یک job دوره‌ای این رکوردها را دوباره verify می‌کند. verify دوباره امن است:
+  زرین‌پال کد ۱۰۱ (قبلاً تأیید شده) را `DUPLICATE` = موفق برمی‌گرداند.
+
+در cron یا celery اجرا کن:
 
 ```python
 from django_iranian_payment.contrib.django import services
 
-services.reverify_pending()       # تأیید مجدد همه‌ی رکوردهای بازگشته‌ی ناتمام
-services.expire_stale(older_than_minutes=15)  # منقضی کردن رکوردهای خیلی قدیمی
+services.reverify_pending()       # رکوردهای returnedِ ناتمام را دوباره verify می‌زند
+services.expire_stale(older_than_minutes=30)  # رکوردهای خیلی قدیمیِ نرفته به درگاه
 ```
+
+> `reverify_pending` خودش خطای در دسترس نبودن درگاه را می‌بلعد (رکورد returned می‌ماند و
+> اجرای بعدی دوباره تلاش می‌کند)، و `extra` لازم برای verify درگاه‌های شاپرکی (ملت و ...)
+> را از `raw` رکورد بازمی‌خواند. `older_than_minutes` را روی ۳۰+ بگذار تا رکورد معلق
+> فرصت reverify داشته باشد پیش از انقضا.
+
+**حالت مدیریت دستی دیتابیس (روش ۲):** همین منطق را باید خودت پیاده کنی — نمونه‌ی کامل
+(callback با `payment_status=pending` + `reverify_pending` + management command) در
+`scripts/django_custom_db.py`.
 
 ### وضعیت‌های رکورد
 

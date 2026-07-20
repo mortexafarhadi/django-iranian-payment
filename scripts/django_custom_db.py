@@ -43,7 +43,14 @@ start_payment/verify_payment + view و url داخلی). این فایل حالت
      پارامتر callback قابل دستکاری است؛ فقط result.is_success معتبر است.
   4. یکتایی و idempotency مسئولیت توست: اگر رکورد قبلاً COMPLETE شده، دوباره
      verify نزن (بعضی درگاه‌ها مثل سامان یک RefNum را بارها verify می‌کنند).
-  5. واحد بانک همیشه ریال است. اگر می‌خواهی ورودی را تومان بدهی، در حالت ۲ واحد را
+  5. ⚠️ خطای شبکه در verify ≠ پرداخت ناموفق. اگر verify با GatewayConnectionError
+     شکست خورد (درگاه بی‌پاسخ/۵۰۰)، پول ممکن است از کاربر کم شده باشد ولی تأیید
+     نشده. رکورد را «failed» نکن — «returned» (تأیید معلق) بگذار و extra را ذخیره
+     کن تا یک job دوره‌ای بعداً دوباره verify بزند. verify دوباره امن است:
+     زرین‌پال code=101 (قبلاً تأیید شده) را DUPLICATE برمی‌گرداند که is_success است.
+     اگر «failed» بگذاری، پرداخت موفق برای همیشه گم می‌شود. (نمونه‌ی کامل پایین:
+     callback + reverify_pending.)
+  6. واحد بانک همیشه ریال است. اگر می‌خواهی ورودی را تومان بدهی، در حالت ۲ واحد را
      روی خود درخواست بده: PaymentRequest(amount=15_000, currency="toman", ...). پکیج
      خودکار به ریال تبدیل می‌کند (۱ تومان = ۱۰ ریال) و amount_to_send ریالی می‌شود.
      برای خواندن واحد سراسری از settings: from django_iranian_payment import
@@ -165,7 +172,7 @@ start_payment/verify_payment + view و url داخلی). این فایل حالت
   zibal     | GET    | GET      | authority == trackId   | —
   nextpay   | GET    | GET      | authority == trans_id  | —
   sadad     | GET    | POST     | authority == Token     | (res_code اختیاری)
-  mellat    | POST!  | POST     | order_id == SaleOrderId| res_code, sale_reference_id,
+  mellat    | POST!  | POST     | authority == RefId     | res_code, sale_reference_id,
             |        |          |                        | sale_order_id, card, final
   saman     | GET*   | POST     | order_id == ResNum     | ref_num(RefNum), state
   irankish  | GET*   | POST     | authority == token     | reference_id, token, result_code
@@ -190,7 +197,7 @@ from django.utils.html import escape
 
 from django_iranian_payment import get_gateway
 from django_iranian_payment.core.models import PaymentRequest
-from django_iranian_payment.core.exceptions import GatewayError
+from django_iranian_payment.core.exceptions import GatewayError, GatewayConnectionError
 
 # توجه: این import به مدل خودت اشاره می‌کند که در yourapp/models.py تعریفش کردی.
 # اینجا داخل توابع import می‌شود تا این فایل راهنما بدون اپ تو هم قابل import بماند.
@@ -216,7 +223,9 @@ CALLBACK_SPEC = {
         "extra": {"res_code": ("ResCode",)},
     },
     "mellat": {
-        "lookup": ("order_id", "SaleOrderId"),
+        # ملت با RefId (authority یکتا per-transaction) پیدا می‌شود، نه SaleOrderId
+        # که در retry تکرار می‌شود و رکورد اشتباه می‌دهد (منطبق با _CALLBACK_SPEC پکیج).
+        "lookup": ("authority", "RefId"),
         "extra": {
             "res_code": ("ResCode",),
             "sale_reference_id": ("SaleReferenceId",),
@@ -399,13 +408,32 @@ def callback(request, slug):
     if record.status == "complete":
         return _result_redirect(record)
 
+    extra = _build_extra(slug, request)
+
+    # ⚠️ پیش‌علامت: پیش از تماس شبکه‌ای، رکورد را «returned» بگذار و extra را ذخیره
+    # کن. اگر verify با خطای شبکه شکست بخورد یا پروسه کرش کند، رکورد در «returned»
+    # می‌ماند و reverify_pending بعداً می‌گیردش — نه در «redirect» که گم می‌شود.
+    record.status = "returned"
+    record.raw = {**(record.raw or {}), "callback_extra": extra}
+    record.save(update_fields=["status", "raw", "updated_at"])
+
     gw = get_gateway(slug)
-    result = gw.verify(
-        authority=record.authority,
-        amount=record.amount_sent,  # ⚠️ مرجع یکتا، نه record.amount
-        order_id=record.order_id,
-        extra=_build_extra(slug, request),  # برای ملت/سامان/ایران‌کیش/دیجی‌پی لازم
-    )
+    try:
+        result = gw.verify(
+            authority=record.authority,
+            amount=record.amount_sent,  # ⚠️ مرجع یکتا، نه record.amount
+            order_id=record.order_id,
+            extra=extra,  # برای ملت/سامان/ایران‌کیش/دیجی‌پی لازم
+        )
+    except GatewayConnectionError:
+        # درگاه در دسترس نیست (بی‌پاسخ/۵۰۰). رکورد در «returned» می‌ماند؛
+        # reverify_pending بعداً دوباره verify می‌زند. کاربر را pending برگردان،
+        # هرگز «failed» نگذار (پول ممکن است کم شده باشد).
+        return HttpResponse(
+            f"پرداخت شما در حال بررسی است (سفارش {record.order_id}). "
+            "نتیجه‌ی نهایی به‌زودی مشخص می‌شود.",
+            status=202,
+        )
 
     if result.is_success:
         record.status = "complete"
@@ -421,6 +449,76 @@ def callback(request, slug):
         record.save()
 
     return _result_redirect(record)
+
+
+# ─────────────────────────────────────────────────────────────
+#  قدم ۴: تأیید مجدد رکوردهای معلق (در دسترس نبودن درگاه) — job دوره‌ای
+# ─────────────────────────────────────────────────────────────
+#
+# وقتی درگاه در callback بی‌پاسخ داد، رکورد در status="returned" ماند. این تابع را
+# در یک management command / celery task / cron هر چند دقیقه اجرا کن تا رکوردهای
+# معلق دوباره verify شوند. extra را از raw که در callback ذخیره کردیم برمی‌داریم.
+
+
+def reverify_pending(slug=None):
+    """رکوردهای returnedِ تأییدنشده را دوباره verify می‌زند. خروجی: تعداد موفق‌ها."""
+    from yourapp.models import MyPayment  # مدل خودت
+
+    qs = MyPayment.objects.filter(status="returned")
+    if slug:
+        qs = qs.filter(gateway_slug=slug)
+
+    completed = 0
+    for record in qs:
+        gw = get_gateway(record.gateway_slug)
+        extra = (record.raw or {}).get("callback_extra")
+        try:
+            result = gw.verify(
+                authority=record.authority,
+                amount=record.amount_sent,
+                order_id=record.order_id,
+                extra=extra,
+            )
+        except GatewayConnectionError:
+            # هنوز در دسترس نیست؛ رها کن، اجرای بعدی دوباره تلاش می‌کند.
+            continue
+        if result.is_success:
+            record.status = "complete"
+            record.reference_id = result.reference_id or ""
+            record.card_number = result.card_number or ""
+            record.raw = result.raw or {}
+            record.save()
+            completed += 1
+        else:
+            record.status = "failed"
+            record.error_code = result.error_code or ""
+            record.error_message = result.error_message or ""
+            record.raw = result.raw or {}
+            record.save()
+    return completed
+
+
+# نمونه‌ی management command (yourapp/management/commands/reverify_payments.py):
+#
+#   from django.core.management.base import BaseCommand
+#   from yourapp.views import reverify_pending   # یا هرجا گذاشتی
+#
+#   class Command(BaseCommand):
+#       help = "تأیید مجدد پرداخت‌های معلق (درگاه در callback بی‌پاسخ داده بود)"
+#       def handle(self, *args, **opts):
+#           n = reverify_pending()
+#           self.stdout.write(self.style.SUCCESS(f"{n} پرداخت تأیید شد"))
+#
+# سپس در crontab (هر ۵ دقیقه):
+#   */5 * * * * cd /path/to/project && python manage.py reverify_payments
+#
+# یا celery beat:
+#   @shared_task
+#   def reverify_task():
+#       from yourapp.views import reverify_pending
+#       return reverify_pending()
+#   # CELERY_BEAT_SCHEDULE: {"reverify": {"task": "...reverify_task",
+#   #                                     "schedule": 300.0}}
 
 
 def _result_redirect(record):

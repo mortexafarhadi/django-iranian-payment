@@ -6,6 +6,7 @@
 import pytest
 
 from django_iranian_payment.core.base import InMemoryTransport
+from django_iranian_payment.core.exceptions import GatewayConnectionError
 from django_iranian_payment.core.fee import FeeConfig, FeePayer
 from django_iranian_payment.contrib.django.models import Payment, PaymentStatus
 from django_iranian_payment.contrib.django import services
@@ -168,6 +169,74 @@ def test_reverify_pending_completes_returned_records():
     # reverify_pending خودش transport نمی‌گیرد؛ پس مستقیم verify_payment را تست می‌کنیم
     t_ok = InMemoryTransport({ZP_VER: {"data": {"code": 100, "ref_id": 9}}})
     payment = services.verify_payment("zarinpal", "A1", transport=t_ok)
+    assert payment.is_success
+
+
+@pytest.mark.django_db
+def test_verify_connection_error_marks_returned_not_lost():
+    # رگرسیون باگ پول‌گم‌شده: اگر verify با خطای شبکه/۵۰۰ شکست بخورد، رکورد نباید
+    # در REDIRECT_TO_BANK بماند (که reverify نمی‌گیردش و expire_stale منقضی‌اش می‌کند)؛
+    # باید RETURN_FROM_BANK شود تا reverify_pending بعداً تمامش کند.
+    t_req = InMemoryTransport({ZP_REQ: {"data": {"authority": "A1"}, "errors": []}})
+    services.start_payment(
+        "zarinpal", amount=50_000, callback_url="cb", order_id="O1", transport=t_req
+    )
+
+    # transport خالی: URL verify تعریف نشده → InMemoryTransport خطای اتصال می‌دهد.
+    with pytest.raises(GatewayConnectionError):
+        services.verify_payment("zarinpal", "A1", transport=InMemoryTransport({}))
+
+    payment = Payment.objects.get(authority="A1")
+    assert payment.status == PaymentStatus.RETURN_FROM_BANK  # نه REDIRECT، نه گم‌شده
+
+    # حالا درگاه برگشت؛ همان رکورد با reverify تمام می‌شود.
+    t_ok = InMemoryTransport({ZP_VER: {"data": {"code": 100, "ref_id": 42}}})
+    payment = services.verify_payment("zarinpal", "A1", transport=t_ok)
+    assert payment.is_success
+    assert payment.reference_id == "42"
+
+
+@pytest.mark.django_db
+def test_expire_stale_ignores_returned_after_connection_error():
+    # رکوردی که پس از خطای شبکه‌ی verify به RETURN_FROM_BANK رفته نباید توسط
+    # expire_stale منقضی شود (فقط WAITING/REDIRECT کهنه منقضی می‌شوند).
+    from django.utils import timezone
+
+    t_req = InMemoryTransport({ZP_REQ: {"data": {"authority": "A1"}, "errors": []}})
+    services.start_payment(
+        "zarinpal", amount=1000, callback_url="cb", order_id="O1", transport=t_req
+    )
+    with pytest.raises(GatewayConnectionError):
+        services.verify_payment("zarinpal", "A1", transport=InMemoryTransport({}))
+
+    Payment.objects.filter(authority="A1").update(
+        created_at=timezone.now() - timezone.timedelta(minutes=30)
+    )
+    assert services.expire_stale(older_than_minutes=15) == 0  # returned دست‌نخورده
+
+
+@pytest.mark.django_db
+def test_reverify_pending_passes_extra_from_raw():
+    # رگرسیون: extra ذخیره‌شده در raw (برای درگاه‌های شاپرکی) باید در reverify
+    # دوباره به verify پاس شود. اینجا با زرین‌پال شبیه‌سازی می‌کنیم که extra را
+    # نادیده می‌گیرد، ولی تأیید می‌کنیم رکورد returned با extra ذخیره‌شده کامل می‌شود.
+    t_req = InMemoryTransport({ZP_REQ: {"data": {"authority": "A1"}, "errors": []}})
+    services.start_payment(
+        "zarinpal", amount=1000, callback_url="cb", order_id="O1", transport=t_req
+    )
+    # callback با extra ولی درگاه بی‌پاسخ → returned با callback_extra در raw
+    with pytest.raises(GatewayConnectionError):
+        services.verify_payment(
+            "zarinpal", "A1", transport=InMemoryTransport({}), extra={"State": "OK"}
+        )
+    payment = Payment.objects.get(authority="A1")
+    assert payment.raw.get("callback_extra") == {"State": "OK"}
+
+    # reverify_pending نمی‌تواند transport بگیرد؛ verify_payment را با extra از raw صدا می‌زنیم.
+    t_ok = InMemoryTransport({ZP_VER: {"data": {"code": 100, "ref_id": 7}}})
+    payment = services.verify_payment(
+        "zarinpal", "A1", transport=t_ok, extra=payment.raw.get("callback_extra")
+    )
     assert payment.is_success
 
 

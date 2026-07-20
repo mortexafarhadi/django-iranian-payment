@@ -140,7 +140,7 @@ from django.urls import reverse
 
 from django_iranian_payment.contrib.django.services import start_payment
 from django_iranian_payment.contrib.django.models import Payment, PaymentStatus
-from django_iranian_payment.core.exceptions import GatewayError
+from django_iranian_payment.core.exceptions import GatewayError, GatewayConnectionError
 
 
 def checkout(request):
@@ -181,6 +181,12 @@ def payment_result(request):
         payment = Payment.objects.filter(order_id=order_id).first()
         err = payment.error_message if payment else ""
         return HttpResponse(f"پرداخت ناموفق. {err}")
+    elif status == "pending":
+        # درگاه هنگام verify در دسترس نبود؛ رکورد معلق مانده و reverify_pending بعداً
+        # تمامش می‌کند. کاربر را در انتظار بگذار — نه موفق، نه ناموفق.
+        return HttpResponse(
+            f"پرداخت شما در حال بررسی است (سفارش {order_id}). نتیجه به‌زودی مشخص می‌شود."
+        )
     return HttpResponse("نتیجه نامشخص.", status=400)
 ```
 
@@ -327,7 +333,7 @@ from django.utils.html import escape
 
 from django_iranian_payment import get_gateway
 from django_iranian_payment.core.models import PaymentRequest
-from django_iranian_payment.core.exceptions import GatewayError
+from django_iranian_payment.core.exceptions import GatewayError, GatewayConnectionError
 from .models import MyPayment
 
 
@@ -398,22 +404,34 @@ def callback(request):
     if record.status == "complete":
         return HttpResponse("قبلاً تأیید شده.")
 
-    # extra لازم ملت برای verify:
-    extra = {
+    # extra لازم ملت برای verify (فقط مقادیر پرشده):
+    extra = {k: v for k, v in {
         "res_code": p.get("ResCode"),
         "sale_reference_id": p.get("SaleReferenceId"),
         "sale_order_id": sale_order_id,
         "card_number": p.get("CardHolderPan"),
         "final_amount": p.get("FinalAmount"),
-    }
+    }.items() if v}
+
+    # پیش‌علامت: «returned» + ذخیره‌ی extra در raw، پیش از تماس با بانک، تا خطای شبکه
+    # رکورد را گم نکند و reverify_pending با همین extra (sale_reference_id) بگیردش.
+    record.status = "returned"
+    record.raw = {**(record.raw or {}), "callback_extra": extra}
+    record.save(update_fields=["status", "raw", "updated_at"])
 
     gw = get_gateway("mellat")
-    result = gw.verify(
-        authority=ref_id,
-        amount=record.amount_sent,   # ⚠️ نه record.amount
-        order_id=record.order_id,
-        extra={k: v for k, v in extra.items() if v},
-    )
+    try:
+        result = gw.verify(
+            authority=ref_id,
+            amount=record.amount_sent,   # ⚠️ نه record.amount
+            order_id=record.order_id,
+            extra=extra,
+        )
+    except GatewayConnectionError:
+        # درگاه در دسترس نیست؛ رکورد «returned» می‌ماند، reverify_pending بعداً verify می‌زند.
+        return HttpResponse(
+            f"پرداخت شما در حال بررسی است (سفارش {record.order_id}).", status=202
+        )
 
     if result.is_success:
         record.status = "complete"
@@ -427,6 +445,31 @@ def callback(request):
     record.error_message = result.error_message or ""
     record.save()
     return HttpResponse(f"پرداخت ناموفق: {record.error_message}")
+
+
+def reverify_pending():
+    """رکوردهای معلق ملت (درگاه در callback بی‌پاسخ داده بود) را دوباره verify می‌کند. cron."""
+    for record in MyPayment.objects.filter(gateway_slug="mellat", status="returned"):
+        extra = (record.raw or {}).get("callback_extra")
+        try:
+            result = get_gateway("mellat").verify(
+                authority=record.authority,
+                amount=record.amount_sent,
+                order_id=record.order_id,
+                extra=extra,
+            )
+        except GatewayConnectionError:
+            continue
+        if result.is_success:
+            record.status = "complete"
+            record.reference_id = result.reference_id or ""
+            record.card_number = result.card_number or ""
+            record.raw = result.raw or {}
+            record.save()
+        else:
+            record.status = "failed"
+            record.error_message = result.error_message or ""
+            record.save()
 ```
 
 </div>
@@ -462,6 +505,23 @@ gw.reverse(order_id=record.order_id,
 - **settle:** اگر `verify_only` باشی، حتماً `settle()` را بزن وگرنه Autoreversal.
 
 ---
+
+## در دسترس نبودن درگاه هنگام verify
+
+اگر این درگاه هنگام verify بی‌پاسخ داد یا خطای شبکه/۵۰۰ برگرداند، پول ممکن است از
+کاربر کم شده ولی تأیید نشده باشد. **خطای شبکه ≠ پرداخت ناموفق**:
+
+- **حالت ۱ (پکیج DB):** خودکار مدیریت می‌شود — رکورد `RETURN_FROM_BANK` معلق می‌ماند
+  (نه گم، نه منقضی) و کاربر `payment_status=pending` می‌گیرد. فقط یک job دوره‌ای بساز:
+  `services.reverify_pending()` + `services.expire_stale(older_than_minutes=30)`.
+- **حالت ۲ (DB خودت):** در callback هنگام `GatewayConnectionError` رکورد را
+  `"returned"` (نه `"failed"`) بگذار و `extra` را در `raw` ذخیره کن؛ سپس یک job
+  دوره‌ای معلق‌ها را دوباره verify کند.
+
+> نکته‌ی ملت: verify به `sale_reference_id`/`sale_order_id` از callback نیاز دارد. در حالت ۱ اینها خودکار در `raw["callback_extra"]` ذخیره و در reverify بازخوانده می‌شوند؛ در حالت ۲ خودت باید همراه رکورد ذخیره‌شان کنی تا reverify کار کند.
+
+جزئیات کامل و نمونه‌ی management command + cron:
+[README.md](README.md#در-دسترس-نبودن-درگاه-هنگام-verify-مهم--برای-همهی-درگاهها).
 
 ## کد آماده‌ی اجرا
 

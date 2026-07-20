@@ -87,6 +87,61 @@ IRANIAN_PAYMENT = {
 واکنش می‌دهند. زیبال با `merchant="zibal"` و سامان/ایران‌کیش/نکست‌پی/سداد اصلاً
 URL سندباکس جدا ندارند (در راهنمای هرکدام ذکر شده).
 
+## در دسترس نبودن درگاه هنگام verify (مهم — برای همه‌ی درگاه‌ها)
+
+درگاه ممکن است هنگام verify بی‌پاسخ بدهد یا ۵۰۰ برگرداند (بی‌ثباتی زرین‌پال و ...).
+در این لحظه ممکن است **پول از کاربر کم شده باشد ولی تأیید نشده**. اگر این رکورد را
+«ناموفق» علامت بزنی یا رهایش کنی، پول گم می‌شود. راه‌حل در هر دو حالت یکسان است:
+
+> خطای شبکه در verify (`GatewayConnectionError`) ≠ پرداخت ناموفق. یعنی «نمی‌دانم»،
+> نه «رد شد». رکورد باید **معلق** بماند و بعداً دوباره verify شود، نه نهایی شود.
+
+verify دوباره امن است: زرین‌پال کد ۱۰۱ (قبلاً تأیید شده) را `DUPLICATE` = موفق
+برمی‌گرداند؛ درگاه‌های دیگر هم verify را idempotent می‌پذیرند.
+
+### حالت ۱ — پکیج DB را مدیریت می‌کند (خودکار)
+
+هیچ کد اضافه‌ای در جریان پرداخت لازم نیست. `verify_payment` پیش از تماس با بانک،
+رکورد را `RETURN_FROM_BANK` علامت می‌زند و اگر verify با خطای شبکه شکست بخورد،
+رکورد در همین حالت می‌ماند (نه گم، نه منقضی) و view کاربر را با
+`payment_status=pending` برمی‌گرداند. **تنها کاری که تو باید بکنی: یک job دوره‌ای**
+که رکوردهای معلق را دوباره verify کند:
+
+<div dir="ltr">
+
+```python
+# yourapp/management/commands/reverify_payments.py
+from django.core.management.base import BaseCommand
+from django_iranian_payment.contrib.django import services
+
+class Command(BaseCommand):
+    def handle(self, *args, **opts):
+        n = services.reverify_pending()             # معلق‌ها را دوباره verify می‌زند
+        services.expire_stale(older_than_minutes=30)  # نرفته‌های خیلی قدیمی را منقضی
+        self.stdout.write(f"{n} پرداخت تأیید شد")
+```
+
+```bash
+# هر ۵ دقیقه (cron)
+*/5 * * * * cd /path/to/project && python manage.py reverify_payments
+```
+</div>
+
+- `reverify_pending` خطای در دسترس نبودن را می‌بلعد (رکورد معلق می‌ماند، اجرای بعدی
+  دوباره تلاش می‌کند) و `extra` لازم برای درگاه‌های شاپرکی (ملت و ...) را از
+  `raw` رکورد بازمی‌خواند.
+- `older_than_minutes` را روی ۳۰+ بگذار تا رکورد معلق پیش از انقضا فرصت reverify داشته باشد.
+- در صفحه‌ی `payment_status=pending` به کاربر بگو «در حال بررسی، نتیجه به‌زودی» —
+  نه موفق، نه ناموفق.
+
+### حالت ۲ — خودت DB را مدیریت می‌کنی
+
+خودکار نیست؛ باید همین الگو را پیاده کنی. در callback هنگام `GatewayConnectionError`
+رکورد را `status="returned"` (تأیید معلق) بگذار — **نه `"failed"`** — و `extra` را
+ذخیره کن؛ سپس یک job دوره‌ای رکوردهای `returned` را دوباره verify کند. نمونه‌ی کامل
+و اجراشدنی (callback + `reverify_pending` + management command) در
+`scripts/django_custom_db.py` است.
+
 ## کد نمونه‌ی اجراشدنی
 
 کنار این راهنماها، فایل‌های `scripts/django_<slug>.py` همان کد را به‌صورت قابل

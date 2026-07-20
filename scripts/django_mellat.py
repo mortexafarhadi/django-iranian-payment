@@ -110,7 +110,7 @@ from django.urls import reverse
 
 from django_iranian_payment.contrib.django.services import start_payment, verify_payment
 from django_iranian_payment.contrib.django.models import Payment, PaymentStatus
-from django_iranian_payment.core.exceptions import GatewayError
+from django_iranian_payment.core.exceptions import GatewayError, GatewayConnectionError
 
 
 def checkout(request):
@@ -169,6 +169,11 @@ def payment_result(request):
         err = payment.error_message if payment else ""
         return HttpResponse(f"پرداخت ناموفق. {err}")
 
+    elif status == "pending":
+        # درگاه هنگام verify در دسترس نبود؛ رکورد معلق مانده و reverify_pending بعداً تمامش می‌کند.
+        return HttpResponse(
+            f"پرداخت شما در حال بررسی است (سفارش {order_id}). نتیجه به‌زودی مشخص می‌شود."
+        )
     return HttpResponse("نتیجه نامشخص.", status=400)
 
 
@@ -223,7 +228,8 @@ def payment_result(request):
 #     نیست (اپ در INSTALLED_APPS نیست)، پس باید فرم auto-submit را خودت بسازی.
 #   • callback: POST — ملت RefId, ResCode, SaleOrderId, SaleReferenceId و گاهی
 #     CardHolderPan/FinalAmount می‌فرستد.
-#   • رکوردت را با order_id(==SaleOrderId) پیدا کن (RefId هم authority است).
+#   • رکوردت را با authority(==RefId، یکتا per-transaction) پیدا کن، نه SaleOrderId
+#     که در retry تکرار می‌شود (منطبق با _CALLBACK_SPEC پکیج). SaleOrderId فقط برای extra.
 #   • verify به extra نیاز دارد: res_code, sale_reference_id, sale_order_id و
 #     اختیاری card_number/final_amount. اگر کاربر کنسل کرد (ResCode=17) پکیج بدون
 #     تماس SOAP نتیجه‌ی ناموفق برمی‌گرداند.
@@ -292,34 +298,51 @@ def callback_self_managed(request):
     from yourapp.models import MyPayment
 
     p = request.POST
-    sale_order_id = p.get("SaleOrderId")
-    if not sale_order_id:
-        return HttpResponse("SaleOrderId در callback نبود.", status=400)
+    sale_order_id = p.get("SaleOrderId")  # برای extra لازم است
+    ref_id = p.get("RefId")
+    if not ref_id:
+        return HttpResponse("RefId در callback نبود.", status=400)
 
-    record = MyPayment.objects.filter(
-        gateway_slug="mellat", order_id=sale_order_id
-    ).first()
+    # ملت با authority(==RefId، یکتا per-transaction) پیدا می‌شود، نه SaleOrderId که در
+    # retry تکرار می‌شود (منطبق با _CALLBACK_SPEC پکیج و docs/gateways/mellat.md).
+    record = MyPayment.objects.filter(gateway_slug="mellat", authority=ref_id).first()
     if record is None:
         return HttpResponse("رکورد یافت نشد.", status=404)
     if record.status == "complete":
         return HttpResponse("قبلاً تأیید شده.")
 
-    # extra لازم ملت برای verify (همان چیزی که _extract_extra پکیج می‌سازد):
+    # extra لازم ملت برای verify (فقط مقادیر پرشده):
     extra = {
-        "res_code": p.get("ResCode"),
-        "sale_reference_id": p.get("SaleReferenceId"),
-        "sale_order_id": sale_order_id,
-        "card_number": p.get("CardHolderPan"),
-        "final_amount": p.get("FinalAmount"),
+        k: v
+        for k, v in {
+            "res_code": p.get("ResCode"),
+            "sale_reference_id": p.get("SaleReferenceId"),
+            "sale_order_id": sale_order_id,
+            "card_number": p.get("CardHolderPan"),
+            "final_amount": p.get("FinalAmount"),
+        }.items()
+        if v
     }
 
+    # پیش‌علامت: «returned» + ذخیره‌ی extra در raw، پیش از تماس با بانک، تا خطای شبکه
+    # رکورد را گم نکند و reverify_pending با همین extra بعداً بگیردش.
+    record.status = "returned"
+    record.raw = {**(record.raw or {}), "callback_extra": extra}
+    record.save(update_fields=["status", "raw", "updated_at"])
+
     gw = get_gateway("mellat")
-    result = gw.verify(
-        authority=record.authority,  # RefId
-        amount=record.amount_sent,  # ← نه record.amount
-        order_id=record.order_id,
-        extra={k: v for k, v in extra.items() if v},
-    )
+    try:
+        result = gw.verify(
+            authority=record.authority,  # RefId
+            amount=record.amount_sent,  # ← نه record.amount
+            order_id=record.order_id,
+            extra=extra,
+        )
+    except GatewayConnectionError:
+        # درگاه در دسترس نیست؛ رکورد «returned» می‌ماند، reverify_pending بعداً verify می‌زند.
+        return HttpResponse(
+            f"پرداخت شما در حال بررسی است (سفارش {record.order_id}).", status=202
+        )
 
     if result.is_success:
         record.status = "complete"
@@ -332,6 +355,33 @@ def callback_self_managed(request):
     record.error_message = result.error_message or ""
     record.save()
     return HttpResponse(f"پرداخت ناموفق: {record.error_message}")
+
+
+def reverify_pending():
+    """رکوردهای معلق (درگاه در callback بی‌پاسخ داده بود) را دوباره verify می‌کند. cron."""
+    from yourapp.models import MyPayment
+
+    for record in MyPayment.objects.filter(gateway_slug="mellat", status="returned"):
+        extra = (record.raw or {}).get("callback_extra")
+        try:
+            result = get_gateway("mellat").verify(
+                authority=record.authority,
+                amount=record.amount_sent,
+                order_id=record.order_id,
+                extra=extra,
+            )
+        except GatewayConnectionError:
+            continue  # هنوز در دسترس نیست؛ دفعه‌ی بعد
+        if result.is_success:
+            record.status = "complete"
+            record.reference_id = result.reference_id or ""
+            record.card_number = result.card_number or ""
+            record.raw = result.raw or {}
+            record.save()
+        else:
+            record.status = "failed"
+            record.error_message = result.error_message or ""
+            record.save()
 
 
 if __name__ == "__main__":

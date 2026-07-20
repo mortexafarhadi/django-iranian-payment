@@ -103,7 +103,7 @@ from django.urls import reverse
 
 from django_iranian_payment.contrib.django.services import start_payment
 from django_iranian_payment.contrib.django.models import Payment, PaymentStatus
-from django_iranian_payment.core.exceptions import GatewayError
+from django_iranian_payment.core.exceptions import GatewayError, GatewayConnectionError
 
 
 def checkout(request):
@@ -139,6 +139,12 @@ def payment_result(request):
             return HttpResponse(f"پرداخت موفق! کد پیگیری: {payment.reference_id}")
     elif status == "failed":
         return HttpResponse("پرداخت ناموفق.")
+    elif status == "pending":
+        # درگاه هنگام verify در دسترس نبود؛ رکورد معلق مانده و reverify_pending بعداً
+        # تمامش می‌کند. کاربر را در انتظار بگذار — نه موفق، نه ناموفق.
+        return HttpResponse(
+            f"پرداخت شما در حال بررسی است (سفارش {order_id}). نتیجه به‌زودی مشخص می‌شود."
+        )
     return HttpResponse("نتیجه نامشخص.", status=400)
 ```
 </div>
@@ -241,7 +247,7 @@ from django.urls import reverse
 
 from django_iranian_payment import get_gateway
 from django_iranian_payment.core.models import PaymentRequest
-from django_iranian_payment.core.exceptions import GatewayError
+from django_iranian_payment.core.exceptions import GatewayError, GatewayConnectionError
 from .models import MyPayment
 
 
@@ -294,12 +300,22 @@ def callback(request):
     if record.status == "complete":
         return HttpResponse("قبلاً تأیید شده.")
 
+    # پیش‌علامت: پیش از تماس با بانک «returned» بگذار تا خطای شبکه رکورد را گم نکند.
+    record.status = "returned"
+    record.save(update_fields=["status", "updated_at"])
+
     gw = get_gateway("zibal")
-    result = gw.verify(
-        authority=track_id,
-        amount=record.amount_sent,   # ⚠️ نه record.amount
-        order_id=record.order_id,
-    )
+    try:
+        result = gw.verify(
+            authority=track_id,
+            amount=record.amount_sent,   # ⚠️ نه record.amount
+            order_id=record.order_id,
+        )
+    except GatewayConnectionError:
+        # درگاه در دسترس نیست؛ رکورد «returned» می‌ماند، reverify_pending بعداً verify می‌زند.
+        return HttpResponse(
+            f"پرداخت شما در حال بررسی است (سفارش {record.order_id}).", status=202
+        )
 
     if result.is_success:
         record.status = "complete"
@@ -312,6 +328,28 @@ def callback(request):
     record.error_message = result.error_message or ""
     record.save()
     return HttpResponse(f"پرداخت ناموفق: {record.error_message}")
+
+
+def reverify_pending():
+    """رکوردهای معلق زیبال (درگاه در callback بی‌پاسخ داده بود) را دوباره verify می‌کند. cron."""
+    for record in MyPayment.objects.filter(gateway_slug="zibal", status="returned"):
+        try:
+            result = get_gateway("zibal").verify(
+                authority=record.authority,
+                amount=record.amount_sent,
+                order_id=record.order_id,
+            )
+        except GatewayConnectionError:
+            continue   # هنوز در دسترس نیست؛ دفعه‌ی بعد
+        if result.is_success:
+            record.status = "complete"
+            record.reference_id = result.reference_id or ""
+            record.card_number = result.card_number or ""
+            record.save()
+        else:
+            record.status = "failed"
+            record.error_message = result.error_message or ""
+            record.save()
 ```
 </div>
 
@@ -323,6 +361,21 @@ def callback(request):
 - **sandbox/live:** فقط با مقدار `merchant` کنترل می‌شود، نه فلگ `sandbox`.
 
 ---
+
+## در دسترس نبودن درگاه هنگام verify
+
+اگر این درگاه هنگام verify بی‌پاسخ داد یا خطای شبکه/۵۰۰ برگرداند، پول ممکن است از
+کاربر کم شده ولی تأیید نشده باشد. **خطای شبکه ≠ پرداخت ناموفق**:
+
+- **حالت ۱ (پکیج DB):** خودکار مدیریت می‌شود — رکورد `RETURN_FROM_BANK` معلق می‌ماند
+  (نه گم، نه منقضی) و کاربر `payment_status=pending` می‌گیرد. فقط یک job دوره‌ای بساز:
+  `services.reverify_pending()` + `services.expire_stale(older_than_minutes=30)`.
+- **حالت ۲ (DB خودت):** در callback هنگام `GatewayConnectionError` رکورد را
+  `"returned"` (نه `"failed"`) بگذار و `extra` را در `raw` ذخیره کن؛ سپس یک job
+  دوره‌ای معلق‌ها را دوباره verify کند.
+
+جزئیات کامل و نمونه‌ی management command + cron:
+[README.md](README.md#در-دسترس-نبودن-درگاه-هنگام-verify-مهم--برای-همهی-درگاهها).
 
 ## کد آماده‌ی اجرا
 

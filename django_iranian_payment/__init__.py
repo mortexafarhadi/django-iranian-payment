@@ -25,7 +25,7 @@ from .core import (
 )
 from .core.django_integration import get_default_currency, get_gateway
 
-__version__ = "1.0.1"
+__version__ = "1.1.1"
 
 __all__ = [
     "get_gateway",

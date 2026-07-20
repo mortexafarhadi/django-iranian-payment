@@ -149,6 +149,12 @@ def payment_result(request):
             return HttpResponse(f"پرداخت موفق! کد پیگیری: {payment.reference_id}")
     elif status == "failed":
         return HttpResponse(f"پرداخت ناموفق برای سفارش {order_id}.")
+    elif status == "pending":
+        # درگاه هنگام verify در دسترس نبود؛ رکورد معلق مانده و job دوره‌ای
+        # (reverify_pending) بعداً تمامش می‌کند. کاربر را در انتظار بگذار.
+        return HttpResponse(
+            f"پرداخت شما در حال بررسی است (سفارش {order_id}). نتیجه به‌زودی مشخص می‌شود."
+        )
     return HttpResponse("نتیجه نامشخص.", status=400)
 ```
 </div>
@@ -181,6 +187,41 @@ urlpatterns = [
 
 > نکته‌ی زرین‌پال: در verify مبلغ باید دقیقاً همان مبلغ initiate باشد. پکیج این را
 > خودکار با `amount_sent` رعایت می‌کند، حتی اگر کارمزد از مشتری گرفته باشی.
+
+### اگر زرین‌پال هنگام verify در دسترس نبود (بی‌ثباتی/۵۰۰)
+
+زرین‌پال گاهی در callback بی‌پاسخ می‌دهد یا ۵۰۰ برمی‌گرداند. در این لحظه ممکن است
+**پول از کاربر کم شده باشد ولی تأیید نشده**. این خودکار مدیریت می‌شود:
+
+- `verify_payment` پیش از تماس با بانک رکورد را `RETURN_FROM_BANK` علامت می‌زند؛ اگر
+  verify با خطای شبکه شکست بخورد، رکورد در همین حالت می‌ماند (نه گم، نه منقضی) و
+  view کاربر را با `payment_status=pending` برمی‌گرداند (در قدم ۴ بالا هندل شد).
+- verify دوباره امن است: زرین‌پال کد ۱۰۱ (قبلاً تأیید) را `DUPLICATE` = موفق می‌دهد.
+
+**تنها کاری که باید بکنی: یک job دوره‌ای** که معلق‌ها را دوباره verify کند:
+
+<div dir="ltr">
+
+```python
+# yourapp/management/commands/reverify_payments.py
+from django.core.management.base import BaseCommand
+from django_iranian_payment.contrib.django import services
+
+class Command(BaseCommand):
+    def handle(self, *args, **opts):
+        n = services.reverify_pending("zarinpal")     # فقط زرین‌پال؛ بدون آرگومان = همه
+        services.expire_stale(older_than_minutes=30)
+        self.stdout.write(f"{n} پرداخت تأیید شد")
+```
+
+```bash
+*/5 * * * * cd /path/to/project && python manage.py reverify_payments
+```
+</div>
+
+بدون این job، رکورد معلق هرگز نهایی نمی‌شود. `older_than_minutes` را ۳۰+ بگذار تا
+معلق‌ها پیش از انقضا فرصت reverify داشته باشند. جزئیات مشترک همه‌ی درگاه‌ها:
+[README.md](README.md#در-دسترس-نبودن-درگاه-هنگام-verify-مهم--برای-همهی-درگاهها).
 
 ---
 
@@ -305,6 +346,8 @@ def checkout(request):
 <div dir="ltr">
 
 ```python
+from django_iranian_payment.core.exceptions import GatewayConnectionError
+
 def callback(request):
     # زرین‌پال در callback GET می‌فرستد: ?Authority=...&Status=OK|NOK
     authority = request.GET.get("Authority")
@@ -320,13 +363,25 @@ def callback(request):
     if record.status == "complete":   # idempotent
         return HttpResponse("قبلاً تأیید شده.")
 
+    # ⚠️ پیش‌علامت: پیش از تماس با بانک رکورد را «returned» بگذار تا اگر verify با
+    # خطای شبکه شکست خورد، معلق بماند و job دوره‌ای بعداً تمامش کند (نه گم شود).
+    record.status = "returned"
+    record.save(update_fields=["status", "updated_at"])
+
     gw = get_gateway("zarinpal")
-    result = gw.verify(
-        authority=authority,
-        amount=record.amount_sent,   # ⚠️ نه record.amount
-        order_id=record.order_id,
-        # زرین‌پال extra لازم ندارد.
-    )
+    try:
+        result = gw.verify(
+            authority=authority,
+            amount=record.amount_sent,   # ⚠️ نه record.amount
+            order_id=record.order_id,
+            # زرین‌پال extra لازم ندارد.
+        )
+    except GatewayConnectionError:
+        # درگاه در دسترس نیست؛ رکورد «returned» می‌ماند و reverify_pending بعداً
+        # verify می‌زند. کاربر را در انتظار بگذار — هرگز «failed» نگذار (پول کم شده).
+        return HttpResponse(
+            f"پرداخت شما در حال بررسی است (سفارش {record.order_id}).", status=202
+        )
 
     if result.is_success:
         record.status = "complete"
@@ -339,6 +394,27 @@ def callback(request):
     record.error_message = result.error_message or ""
     record.save()
     return HttpResponse(f"پرداخت ناموفق: {record.error_message}")
+
+
+# job دوره‌ای برای رکوردهای معلق (درگاه در callback بی‌پاسخ داده بود):
+def reverify_pending():
+    for record in MyPayment.objects.filter(gateway_slug="zarinpal", status="returned"):
+        try:
+            result = get_gateway("zarinpal").verify(
+                authority=record.authority,
+                amount=record.amount_sent,
+                order_id=record.order_id,
+            )
+        except GatewayConnectionError:
+            continue   # هنوز در دسترس نیست؛ دفعه‌ی بعد
+        if result.is_success:
+            record.status = "complete"
+            record.reference_id = result.reference_id or ""
+            record.save()
+        else:
+            record.status = "failed"
+            record.error_message = result.error_message or ""
+            record.save()
 ```
 </div>
 
@@ -349,6 +425,9 @@ def callback(request):
 - **`extra`:** لازم نیست. پارامتر `Status` در callback اطلاعاتی است؛ تصمیم نهایی را
   از `result.is_success` بگیر، نه از `Status` (که قابل دستکاری است).
 - **idempotency:** قبل از verify، اگر `status == "complete"` بود دوباره verify نزن.
+- **درگاه در دسترس نبود:** خطای `GatewayConnectionError` را در callback بگیر، رکورد را
+  `"returned"` (نه `"failed"`) بگذار، و `reverify_pending` را در cron اجرا کن (بالا).
+  verify دوباره امن است (کد ۱۰۱ = `DUPLICATE` موفق).
 
 ---
 

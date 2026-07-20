@@ -383,6 +383,31 @@ uv run python scripts/test_digipay.py verify <TRACKING_CODE> <AMOUNT>
 - زرین‌پال: استخراج code از errors وقتی list است.
 - آیدی‌پی: status رشته‌ای ("100") که verify موفق را FAILED می‌کرد.
 - services: import نسبی `...core` (نه `..core`) از contrib/django.
+- **پول‌گم‌شده هنگام در دسترس نبودن درگاه در verify (هر دو حالت DB).** پیش‌تر اگر
+  `gw.verify()` با `GatewayConnectionError` (بی‌پاسخ/۵۰۰) شکست می‌خورد، هیچ `mark`
+  اجرا نمی‌شد و رکورد در `REDIRECT_TO_BANK` می‌ماند؛ `reverify_pending` فقط
+  `RETURN_FROM_BANK` را می‌گیرد پس هرگز تمامش نمی‌کرد و `expire_stale` اشتباه
+  منقضی‌اش می‌کرد — پرداختِ پول‌داده گم می‌شد. رفع: `verify_payment` اکنون **پیش از**
+  تماس شبکه‌ای رکورد را `RETURN_FROM_BANK` «پیش‌علامت» می‌زند و `extra` را در
+  `raw["callback_extra"]` ذخیره می‌کند؛ تماس شبکه‌ای بیرون از قفل DB است؛ خطای
+  شبکه بالا می‌رود ولی رکورد returned مانده تا reverify بگیردش. `reverify_pending`
+  حالا `extra` را از raw بازمی‌خواند (verify شاپرکی مثل ملت در reverify هم کار
+  می‌کند) و خطای اتصال را می‌بلعد. view callback خطای اتصال را می‌گیرد و
+  `payment_status=pending` برمی‌گرداند (نه ۵۰۰). تست رگرسیون:
+  `test_verify_connection_error_marks_returned_not_lost`،
+  `test_expire_stale_ignores_returned_after_connection_error`،
+  `test_reverify_pending_passes_extra_from_raw` (test_django_layer.py) و
+  `test_callback_gateway_down_redirects_pending_not_500` (test_views.py). حالت
+  مدیریت دستی DB همین الگو را در `scripts/django_custom_db.py` دارد
+  (callback + `reverify_pending` + management command). **این الگو اکنون در
+  مستندات و کدِ کپیِ همه‌ی درگاه‌ها اعمال شده** (نه فقط زرین‌پال): هر
+  `docs/gateways/<slug>.md` و `scripts/django_<slug>.py` در حالت ۲ خطای
+  `GatewayConnectionError` را می‌گیرد، رکورد را `"returned"` (نه `"failed"`)
+  «پیش‌علامت» می‌زند، `extra` را در `raw["callback_extra"]` ذخیره می‌کند (برای
+  reverify درگاه‌های شاپرکی مثل ملت/سامان/ایران‌کیش/دیجی‌پی)، و یک تابع
+  `reverify_pending` برای cron دارد؛ و `payment_result`/نتیجه‌ی هر دو حالت شاخه‌ی
+  `payment_status=pending` را هندل می‌کند. بخش مشترک توضیحی در
+  `docs/gateways/README.md` («در دسترس نبودن درگاه هنگام verify») است.
 
 ### تصمیم‌های ثبت‌شده که نباید بی‌دلیل برگردند
 - ملت پس از **تست تراکنش واقعی روی محیط عملیاتی** به registry عمومی منتقل شد

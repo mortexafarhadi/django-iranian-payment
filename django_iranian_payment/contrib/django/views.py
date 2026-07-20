@@ -13,6 +13,7 @@ services استفاده کند و view خودش را بنویسد.
 from django.http import Http404, HttpResponseRedirect
 from django.shortcuts import get_object_or_404, render
 
+from ...core.exceptions import GatewayConnectionError
 from . import services
 from .models import Payment
 
@@ -147,12 +148,24 @@ def callback(request, slug):
         raise Http404("رکورد پرداختی برای این callback یافت نشد.")
 
     extra = _extract_extra(request, slug)
-    result = services.verify_payment(slug, payment.authority, extra=extra)
+    sep = "&" if "?" in payment.callback_url else "?"
+
+    try:
+        result = services.verify_payment(slug, payment.authority, extra=extra)
+    except GatewayConnectionError:
+        # درگاه در دسترس نیست (بی‌پاسخ/۵۰۰) هنگام verify. رکورد از قبل
+        # RETURN_FROM_BANK است (پیش‌علامت services)، پس reverify_pending بعداً
+        # تمامش می‌کند. کاربر را با وضعیت pending برگردان، نه صفحه‌ی خطا.
+        target = (
+            f"{payment.callback_url}{sep}payment_status=pending"
+            f"&order_id={payment.order_id}"
+        )
+        return HttpResponseRedirect(target)
+
     if result is None:
         raise Http404("رکورد پرداختی برای این authority یافت نشد.")
     payment = result
 
-    sep = "&" if "?" in payment.callback_url else "?"
     status = "success" if payment.is_success else "failed"
     target = f"{payment.callback_url}{sep}payment_status={status}&order_id={payment.order_id}"
     return HttpResponseRedirect(target)
